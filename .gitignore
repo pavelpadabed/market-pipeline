@@ -1,0 +1,25 @@
+# Virtual environment
+.venv/
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Playwright authentication and browser state
+playwright/.auth/
+storage_state.json
+
+# Generated diagnostic artifacts
+artifacts/
+test-results/
