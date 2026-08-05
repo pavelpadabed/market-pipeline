@@ -1,0 +1,30 @@
+[build-system]
+requires = [
+    "setuptools>=77",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-pipeline"
+version = "0.1.0"
+description = "A product data pipeline for acquiring and comparing marketplace offers."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "requests>=2.34.2,<3",
+    "playwright>=1.61.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1,<10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["market_pipeline*"]
+namespaces = false
