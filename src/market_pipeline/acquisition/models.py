@@ -11,6 +11,7 @@ class AcquisitionMethod(StrEnum):
 class AcquisitionFailureOutcome(StrEnum):
     TIMEOUT = "timeout"
     NETWORK_ERROR = "network_error"
+    REQUEST_ERROR = "request_error"
     HTTP_ERROR = "http_error"
     BLOCKED = "blocked"
     UNEXPECTED_CONTENT = "unexpected_content"
