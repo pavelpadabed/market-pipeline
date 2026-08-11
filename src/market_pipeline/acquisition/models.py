@@ -85,6 +85,7 @@ class AcquisitionFailure:
     final_url: str | None
     status_code: int | None
     content_type: str | None
+    retry_after_seconds: int | None = None
 
     def __post_init__(self) -> None:
         _validate_timestamps(
@@ -99,6 +100,16 @@ class AcquisitionFailure:
 
         if self.status_code is not None:
             _validate_http_status_code(self.status_code)
+
+        if self.retry_after_seconds is not None:
+            if type(self.retry_after_seconds) is not int:
+                raise TypeError(
+                    "retry_after_seconds must have type int"
+                )
+            if self.retry_after_seconds < 0:
+                raise ValueError(
+                    "retry_after_seconds must not be negative"
+                )
 
 
 type AcquisitionResult = AcquisitionSuccess | AcquisitionFailure

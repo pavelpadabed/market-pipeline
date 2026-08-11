@@ -51,6 +51,7 @@ def make_acquisition_failure(**overrides) -> AcquisitionFailure:
         "final_url": "https://example.test/products/123",
         "status_code": 503,
         "content_type": "text/html",
+        "retry_after_seconds": None,
     }
     data.update(overrides)
 
@@ -105,6 +106,7 @@ def test_acquisition_failure_stores_available_http_metadata():
         final_url="https://example.test/products/123",
         status_code=503,
         content_type="text/html",
+        retry_after_seconds=60,
     )
 
     assert asdict(result) == {
@@ -117,6 +119,7 @@ def test_acquisition_failure_stores_available_http_metadata():
         "final_url": "https://example.test/products/123",
         "status_code": 503,
         "content_type": "text/html",
+        "retry_after_seconds": 60,
     }
 
 
@@ -137,6 +140,7 @@ def test_acquisition_failure_accepts_unavailable_http_metadata():
         final_url=None,
         status_code=None,
         content_type=None,
+        retry_after_seconds=None,
     )
 
     assert asdict(result) == {
@@ -149,6 +153,7 @@ def test_acquisition_failure_accepts_unavailable_http_metadata():
         "final_url": None,
         "status_code": None,
         "content_type": None,
+        "retry_after_seconds": None,
     }
 
 
@@ -306,3 +311,68 @@ def test_acquisition_failure_rejects_status_code_above_http_range():
         make_acquisition_failure(
             status_code=600,
         )
+
+
+@pytest.mark.parametrize(
+    "invalid_type_value",
+    [
+        True,
+        False,
+        "60",
+    ],
+)
+def test_acquisition_failure_rejects_non_integer_retry_after_seconds(
+    invalid_type_value: object,
+) -> None:
+    with pytest.raises(
+        TypeError,
+        match="retry_after_seconds must have type int",
+    ):
+        make_acquisition_failure(
+            retry_after_seconds=invalid_type_value,
+        )
+
+
+def test_acquisition_failure_rejects_negative_retry_after_seconds() -> None:
+    with pytest.raises(
+        ValueError,
+        match="retry_after_seconds must not be negative",
+    ):
+        make_acquisition_failure(
+            retry_after_seconds=-1,
+        )
+
+
+def test_acquisition_failure_accepts_zero_retry_after_seconds() -> None:
+    started_at = datetime(
+        2026, 8, 4, 9, tzinfo=UTC
+    )
+    finished_at = datetime(
+        2026, 8, 4, 9, 1, tzinfo=UTC
+    )
+
+    result = AcquisitionFailure(
+        requested_url="https://example.test/product",
+        method=AcquisitionMethod.HTTP,
+        started_at=started_at,
+        finished_at=finished_at,
+        outcome=AcquisitionFailureOutcome.HTTP_ERROR,
+        diagnostic_message="Server returned HTTP 503",
+        final_url="https://example.test/products/123",
+        status_code=503,
+        content_type="text/html",
+        retry_after_seconds=0,
+    )
+
+    assert asdict(result) == {
+        "requested_url": "https://example.test/product",
+        "method": AcquisitionMethod.HTTP,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "outcome": AcquisitionFailureOutcome.HTTP_ERROR,
+        "diagnostic_message": "Server returned HTTP 503",
+        "final_url": "https://example.test/products/123",
+        "status_code": 503,
+        "content_type": "text/html",
+        "retry_after_seconds": 0,
+    }
