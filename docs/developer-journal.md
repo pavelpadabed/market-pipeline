@@ -238,6 +238,103 @@ numeric `Retry-After` header. Keep automatic retry outside the acquirer.
 
 ### Third work window
 
-- Started: 15:43 Europe/Warsaw.
+- Time: 15:43-18:44 Europe/Warsaw (3 h 01 min elapsed).
+- Total elapsed development time recorded for the day: 7 h 31 min.
 - Starting point: complete the defensive `Retry-After` cases, then review the
   finished CheapShark acquisition contract before considering refactoring.
+- Completed the CheapShark API acquisition vertical slice in checkpoint commit
+  `dea3498` (`Add CheapShark API acquisition adapter`). Before the refactoring
+  cycle began, the complete deterministic suite passed with 61 tests and
+  `git diff --check` was clean.
+- Audited four Git worktrees after development had become split between the
+  primary checkout and detached Codex worktrees. Confirmed that `dea3498` is a
+  direct descendant of `57531d9`, preserved all diagnostic and parsing work in
+  a named stash, fast-forwarded the primary `main` branch to `dea3498`, and
+  restored the unrelated uncommitted diagnostic files. A safety branch and the
+  full stash remain available; old worktrees were not removed.
+- Performed a read-only responsibility and duplication review of
+  `RequestsAcquirer` and `CheapSharkApiAcquirer`. Chose composition through a
+  narrow `HttpGetTransport` rather than an inheritance template or a universal
+  configurable API client.
+- Defined the internal transport boundary: a received HTTP response is
+  represented by `HttpResponseSnapshot`; request-level failures remain
+  `AcquisitionFailure`; the internal union is `HttpTransportResult`. The
+  orchestrator continues to receive only the public `AcquisitionResult` from
+  source adapters.
+- Kept source semantics in adapters: CheapShark owns `game_id`, endpoint params,
+  User-Agent construction, JSON acceptance, and current `Retry-After`
+  normalization. The transport owns GET execution, query-string preparation,
+  timestamps, response metadata, and classification of failures where no
+  normal response is available.
+- Added the initial snapshot contract test and the first transport happy-path
+  test with a fake session and fake response. The TDD cycle intentionally ends
+  red: the snapshot contract test passes, while the transport test reaches the
+  planned `NotImplementedError`.
+
+### Next small step
+
+Before implementing transport behaviour, align the fake response with the real
+`requests.Response.url` attribute, assert timestamp ordering, and make
+`params` and `headers` keyword-only in `HttpGetTransport.get`. Then implement
+only enough GET behaviour to make
+`test_http_get_transport_returns_response_snapshot` pass; do not move non-2xx,
+media-type, blank-body, JSON, or retry policy into the transport in that step.
+
+## 2026-08-12
+
+### Time
+
+- First work window: 08:52-12:00 Europe/Warsaw (3 h 08 min elapsed).
+- Main area: extracting the shared HTTP GET transport and defining the next
+  adapter-migration boundary.
+
+### Completed
+
+- Implemented the internal `HttpResponseSnapshot` contract and a narrow
+  `HttpGetTransport` happy path. The transport prepares the requested URL from
+  the endpoint and query params, delegates URL, params, headers, and timeout to
+  the injected session, and preserves response status, final URL, all headers,
+  body text, and timezone-aware timestamps.
+- Implemented shared request-level failure construction through the transport's
+  private `_build_failure` helper.
+- Moved deterministic classification of `Timeout`, `ConnectionError`,
+  `TooManyRedirects`, and general `RequestException` into the transport.
+  Redirect-limit and general request failures preserve response URL, status,
+  and Content-Type when an exception contains a response, while keeping those
+  fields `None` when no response is available.
+- Refactored repeated timeout and connection-error assertions into a
+  parameterized test with explicit `timeout` and `connection-error` case IDs.
+  Added separate parameterized response/no-response coverage for redirect-limit
+  and general request failures.
+- Restored PyCharm code analysis by changing current-file inspection level from
+  `Syntax` to `All Problems`.
+
+### Verification evidence
+
+- The focused transport suite passes: 8 tests.
+- `git diff --check` passes.
+- Test execution remains deterministic and does not perform live HTTP requests.
+
+### Decisions and boundaries
+
+- Any normally received HTTP response, including 429 and other non-2xx
+  responses, is a transport-level success represented by
+  `HttpResponseSnapshot`. Source adapters decide whether the snapshot becomes
+  an acquisition success or failure.
+- CheapShark-specific `Retry-After` normalization remains in
+  `CheapSharkApiAcquirer`; the transport only preserves the complete response
+  headers.
+- `CheapSharkApiAcquirer` should receive an injected `HttpGetTransport` and its
+  own User-Agent rather than continuing to own a session and timeout.
+- CheapShark unit tests should use a `FakeHttpTransport` returning real
+  `HttpResponseSnapshot` or `AcquisitionFailure` DTOs. They should not invoke
+  the real transport or repeat low-level session exception tests.
+
+### Next small step
+
+After the break, design the smallest safe migration of the CheapShark happy
+path: introduce a fake transport in its tests, convert the happy-path fixture
+from `FakeResponse` to `HttpResponseSnapshot`, update the adapter constructor to
+accept the transport and User-Agent, and replace direct session access with
+`transport.get`. Keep JSON, status, content-type, blank-body, and 429 policy in
+the adapter and migrate the remaining characterization tests in small groups.
