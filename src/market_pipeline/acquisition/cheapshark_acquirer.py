@@ -16,7 +16,7 @@ GAMES_ENDPOINT = "https://www.cheapshark.com/api/1.0/games"
 class CheapSharkApiAcquirer:
     def __init__(
         self,
-        transport,
+        transport: HttpGetTransport,
         user_agent: str,
     ) -> None:
         self.transport = transport

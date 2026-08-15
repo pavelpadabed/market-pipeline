@@ -338,3 +338,277 @@ from `FakeResponse` to `HttpResponseSnapshot`, update the adapter constructor to
 accept the transport and User-Agent, and replace direct session access with
 `transport.get`. Keep JSON, status, content-type, blank-body, and 429 policy in
 the adapter and migrate the remaining characterization tests in small groups.
+
+### Second work window
+
+- Time: 13:20-15:55 Europe/Warsaw (2 h 35 min elapsed).
+- Total elapsed development time recorded for the day: 5 h 43 min.
+- Migrated `CheapSharkApiAcquirer` from direct session and timeout ownership to
+  an injected `HttpGetTransport` plus its source-specific User-Agent.
+- Added a guard clause that returns transport-level `AcquisitionFailure`
+  objects unchanged. Replaced six duplicated CheapShark exception scenarios
+  with one delegation test that verifies object identity; low-level exception
+  classification remains covered by the transport suite.
+- Preserved transport timestamps in both acquisition success and
+  response-policy failures instead of creating a second timing interval inside
+  the adapter.
+- Migrated all CheapShark characterization tests from fake sessions and fake
+  responses to `FakeHttpTransport` with real `HttpResponseSnapshot` or
+  `AcquisitionFailure` DTOs.
+- Kept response-level policy in the source adapter: non-2xx classification,
+  JSON Content-Type handling, blank-body rejection, syntactic JSON validation,
+  valid JSON without expected game fields, and numeric `Retry-After`
+  normalization for 429 responses.
+- Removed the now-unused CheapShark session-level test doubles and requests
+  exception imports.
+- Created checkpoint commit `7099f8f`
+  (`refactor: extract HTTP transport for CheapShark acquisition`) containing
+  only the transport, CheapShark adapter, their tests, and this journal. Pavel
+  pushed `main`; local `main` and `origin/main` now point to `7099f8f`.
+
+### Final verification for 2026-08-12
+
+- The complete deterministic suite passed before the checkpoint commit:
+  64 tests passed.
+- The focused CheapShark and transport suites passed after the test migration:
+  29 tests passed.
+- `git diff --check` passed.
+- Diagnostic and parsing work remains deliberately uncommitted and outside the
+  checkpoint scope.
+
+### Next small step
+
+Continue the shared-transport refactor by migrating `RequestsAcquirer` to an
+injected `HttpGetTransport`. Preserve its HTML-specific response policy and
+public `AcquisitionResult` behaviour, replace duplicated session exception
+tests with transport-failure delegation coverage, and use the existing suite as
+a characterization safety net. Re-run the complete deterministic suite before
+the next checkpoint.
+
+## 2026-08-13
+
+### Time
+
+- Work session: 08:55-11:53 Europe/Warsaw (2 h 58 min elapsed).
+- Main areas: completing the acquisition checkpoint review and beginning the
+  CheapShark extraction boundary.
+
+### Completed
+
+- Completed the shared HTTP transport refactor by migrating
+  `RequestsAcquirer` from direct session and timeout ownership to an injected
+  `HttpGetTransport`.
+- Added the same transport-failure guard used by the CheapShark adapter:
+  request-level `AcquisitionFailure` objects are returned unchanged, while
+  received `HttpResponseSnapshot` objects continue through the adapter's HTML
+  response policy.
+- Preserved the transport's `started_at` and `finished_at` timestamps in every
+  adapter-created success and failure result.
+- Kept Requests-specific policy in the adapter: non-2xx classification,
+  required HTML Content-Type validation, charset and case-insensitive media-type
+  acceptance, and blank-body rejection.
+- Migrated the Requests characterization tests from fake sessions and fake
+  responses to `FakeHttpTransport` with real `HttpResponseSnapshot` or
+  `AcquisitionFailure` DTOs.
+- Removed duplicated timeout, connection, redirect, and request-exception tests
+  from the adapter suite. Their classification remains covered at the shared
+  transport boundary; one adapter test verifies unchanged failure delegation.
+- Created checkpoint commit `f672914`
+  (`refactor: migrate Requests acquirer to HTTP transport`) containing only the
+  Requests adapter and its tests. Diagnostic and parsing work remained outside
+  the commit.
+
+### Verification evidence
+
+- The focused Requests adapter suite passed: 9 tests.
+- The complete deterministic suite passed: 59 tests.
+- `git diff --check` passed before the checkpoint commit.
+
+### Current checkpoint
+
+- Both current HTTP acquisition adapters now compose the same narrow
+  `HttpGetTransport` and retain only their source- or representation-specific
+  response policy.
+- The acquisition bundle is a candidate for completion for the current MVP.
+  The next architecture review should confirm that no additional acquisition
+  capability is required before work moves to the next pipeline area.
+- `docs/developer-journal.md` remains the single chronological record of
+  implementation sessions, decisions, verification evidence, and hand-off
+  checkpoints; no parallel status document is maintained.
+
+### Skills and portfolio evidence
+
+- Integrated a third-party REST API in Python while keeping source-specific
+  request and response policy inside a dedicated adapter.
+- Designed immutable, typed success and failure contracts for an
+  external-system boundary, including timestamps, redirects, response metadata,
+  explicit failure outcomes, and optional rate-limit hints.
+- Implemented a reusable HTTP GET transport that classifies timeout,
+  connection, redirect-limit, and general request failures without leaking
+  `requests.Response` objects across the acquisition boundary.
+- Applied dependency injection and composition so that two concrete adapters
+  share transport behaviour without an inheritance-heavy framework.
+- Preserved separation of concerns: the transport owns request execution,
+  adapters own representation and source policy, and future orchestration owns
+  fallback and retry decisions.
+- Used test-driven development and deterministic test doubles to cover HTTP,
+  HTML, JSON, redirect, content-type, blank-body, malformed-content, and
+  rate-limit scenarios without live network requests.
+- Refactored duplicated HTTP behaviour only after comparison of two concrete
+  adapters confirmed the shared point of variation.
+- Verification evidence: 59 deterministic acquisition tests pass at checkpoint
+  commit `f672914`; earlier acquisition milestones are recorded in commits
+  `7e7fd93`, `57531d9`, `dea3498`, and `7099f8f`.
+
+These statements support claims such as REST API integration, HTTP client
+integration with Requests, typed boundary design, dependency injection,
+composition, deterministic pytest testing, failure modelling, and rate-limit
+metadata handling. They do not claim REST API design, distributed processing,
+or production-scale API operations.
+
+### CheapShark extraction design and initial DTO session
+
+- Defined the boundary from `AcquisitionSuccess.content` through
+  source-specific JSON extraction to raw candidates for a future Pydantic
+  validation boundary. Extraction does not validate or normalize deal fields.
+- Interpreted the CheapShark Game Lookup response as shared raw `info` metadata
+  plus zero or more elements from `deals`; deliberately excluded
+  `cheapestPriceEver` from the current MVP slice.
+- Chose whole-response `CheapSharkExtractionSuccess | CheapSharkExtractionFailure`
+  semantics, with per-deal candidate or failure results preserved inside a
+  successful extraction. Empty `info`, empty `deals`, and empty deal mappings
+  remain valid extraction shapes; internal business-field validation is deferred.
+- Created the initial extraction package and immutable typed DTOs. Added
+  deterministic model tests for accepting an empty raw mapping and rejecting
+  non-mapping deal candidates with parameterized invalid inputs.
+- Added the first green contract test for `CheapSharkExtractionFailure`,
+  preserving acquisition context, an explicit outcome, and a diagnostic message.
+- Development paused when attention began to decline. The next session should
+  resume with a small reviewable test rather than extending the extraction
+  architecture in one step.
+- Collaboration adjustment: Pavel wants to retain more ownership of architecture
+  proposals. Codex should lead with focused questions and review Pavel's design
+  before recommending a concrete contract.
+
+### Verification evidence for the extraction session
+
+- Pavel reported three parameterized deal-candidate model cases passing and the
+  initial extraction-failure contract test passing in PyCharm.
+- No full extraction or project suite run was recorded for this unfinished slice.
+
+### Next small step
+
+At the next rested session, review the initial extraction DTO diff and continue
+with one small failure-contract test. Preserve Pavel's ownership of the design
+by asking him to propose the next invariant before recommending implementation.
+
+## 2026-08-14
+
+### Time
+
+- First work window: 08:18-09:29 Europe/Warsaw (1 h 11 min elapsed).
+- Second work window: 10:15-12:29 Europe/Warsaw (2 h 14 min elapsed).
+- Third work window: 17:33-19:22 Europe/Warsaw (1 h 49 min elapsed).
+- Total elapsed work time recorded for the day: 5 h 14 min.
+- Main areas: completing the initial CheapShark extraction result contracts and
+  starting the extractor walking skeleton.
+
+### Completed
+
+- Completed the immutable raw deal candidate, per-deal extraction failure,
+  whole-response extraction success, and whole-response extraction failure DTOs.
+- Defined separate unions for one deal result and the complete extraction result.
+- Protected deal-failure indexes against non-integer, boolean, and negative
+  values, and protected both failure DTOs against blank diagnostic messages.
+- Confirmed that empty game metadata and zero deal results form a valid
+  extraction success; business-field validation remains deferred.
+- Pavel independently designed the extractor API and control flow, then reviewed
+  the proposal with Codex before implementation.
+- Confirmed a dependency-free `CheapSharkExtractor.extract` boundary from
+  `AcquisitionSuccess` to `CheapSharkExtractionResult`, with structural document
+  failures and per-deal partial failures kept separate.
+- Renamed the extraction model test module to remove the duplicate pytest module
+  name and restored combined project collection.
+- Implemented the first extractor walking skeleton: valid JSON with empty `info`
+  and empty `deals` returns extraction success with preserved acquisition,
+  empty metadata, and an empty deal-result tuple.
+- Added the next red TDD test requiring two valid deal mappings to become
+  `CheapSharkDealCandidate` objects in source order, then implemented one-pass
+  candidate construction with a typed mutable buffer and immutable tuple result.
+- Added partial-failure coverage with valid candidates around a non-mapping deal.
+  The extractor now preserves source order, the malformed raw value, and its
+  zero-based index without discarding neighbouring candidates.
+- Added defensive invalid-JSON handling at the extraction boundary. Only
+  `json.loads` is inside the `try` block, and `JSONDecodeError` becomes an
+  explicit `INVALID_JSON` extraction failure preserving the acquisition object.
+
+### Verification evidence
+
+- The focused extraction model suite passed: 15 tests.
+- After resolving the module-name collision, the combined deterministic suite
+  passed at the walking-skeleton checkpoint: 75 tests passed in 0.12 s.
+- Final focused extractor verification for the day: 4 tests passed in 0.01 s.
+- Final combined deterministic verification for the day: 78 tests passed in
+  0.12 s.
+- `git diff --check` passed for the extraction models, tests, and journal.
+
+### Next small step
+
+Continue whole-response structural failures from the parsed JSON root, beginning
+with `ROOT_NOT_MAPPING`. Add each outcome through its own red test and keep
+Pydantic/business-field validation outside extraction.
+
+## 2026-08-15
+
+### Time
+
+- Work window: 08:50-09:49 Europe/Warsaw (59 min elapsed).
+- Main area: completing and auditing the CheapShark extraction slice.
+
+### Completed
+
+- Completed whole-response structural classification for a non-mapping JSON
+  root, missing or non-mapping `info`, and missing or non-list `deals`.
+- Used one private sentinel to distinguish a missing required key from a key
+  whose present value is `null` or another invalid shape.
+- Preserved empty `info` mappings and empty `deals` lists as successful raw
+  extraction results rather than treating absence of offers as a parser error.
+- Completed source-order candidate extraction and per-deal partial failures
+  without discarding valid candidates around malformed list elements.
+- Audited the production extractor, DTOs, type aliases, deterministic fixtures,
+  failure outcomes, type narrowing, and boundary scope. Removed the final unused
+  test import and normalized extraction test naming and formatting.
+- Added the missing `HttpGetTransport` constructor annotation to the existing
+  CheapShark acquisition adapter as a behaviour-neutral typing cleanup.
+
+### Verification evidence
+
+- The complete extraction suite passed: 24 tests.
+- The complete deterministic project suite passed: 83 tests in 0.13 s.
+- `git diff --check` passed for the extraction implementation, tests, and journal.
+- Diagnostic and parsing work remains deliberately uncommitted and outside the
+  extraction checkpoint scope.
+
+### Skills and portfolio evidence
+
+- Interpreted a third-party JSON document shape and translated it into an
+  explicit source-specific extraction contract.
+- Modelled whole-document failures separately from per-candidate failures while
+  preserving partial results and source order.
+- Applied immutable dataclasses, union type aliases, type narrowing, a typed
+  mutable construction buffer, and tuple output at a boundary.
+- Used a sentinel to distinguish a missing JSON key from a present invalid value.
+- Built deterministic JSON fixtures and developed the slice through focused TDD
+  cycles without network access.
+- Kept raw extraction separate from future Pydantic validation and normalization.
+
+These statements support claims such as JSON extraction, external schema
+interpretation, partial-failure modelling, typed boundary design, and
+deterministic pytest testing. They do not claim general API schema design,
+streaming JSON processing, or production-scale data ingestion.
+
+### Next small step
+
+Define the next Pydantic validation boundary from successful raw CheapShark game
+metadata and deal candidates to validated source DTOs. Do not add a generic
+extractor protocol until a second concrete source provides evidence for it.
