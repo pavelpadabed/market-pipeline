@@ -36,3 +36,6 @@ test-results/
 
 # Local Codex collaboration instructions
 /AGENTS.md
+
+# Local development journal
+/docs/developer-journal.md
