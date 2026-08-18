@@ -80,3 +80,19 @@ class CheapSharkValidationSuccess:
     extraction: CheapSharkExtractionSuccess
     validated_game_metadata: ValidatedCheapSharkGameMetadata
     deal_results: tuple[CheapSharkDealValidationResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CheapSharkValidationFailure:
+    extraction: CheapSharkExtractionSuccess
+    diagnostic_message: str
+
+    def __post_init__(self) -> None:
+        if not self.diagnostic_message.strip():
+            raise ValueError("diagnostic_message must not be empty")
+
+
+type CheapSharkValidationResult = (
+    CheapSharkValidationSuccess
+    | CheapSharkValidationFailure
+)

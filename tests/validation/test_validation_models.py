@@ -8,9 +8,13 @@ from market_pipeline.acquisition.models import (
     AcquisitionMethod,
     AcquisitionSuccess,
 )
-from market_pipeline.extraction.models import CheapSharkExtractionSuccess
+from market_pipeline.extraction.models import (
+    CheapSharkDealExtractionFailure,
+    CheapSharkExtractionSuccess,
+)
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
+    CheapSharkValidationFailure,
     CheapSharkValidationSuccess,
     ValidatedCheapSharkDeal,
     ValidatedCheapSharkGameMetadata,
@@ -264,7 +268,7 @@ def test_validated_cheapshark_deal_ignores_unknown_fields() -> None:
     assert result.model_dump() == {"store_id": "23", "price": "12.99"}
 
 
-def test_cheapshark_deal_validation_failure_preserves_raw_deal_index_and_diagnostic_message(
+def test_deal_validation_failure_preserves_raw_index_and_diagnostic_message(
 ) -> None:
     raw = {}
 
@@ -351,3 +355,69 @@ def test_cheapshark_validation_success_preserves_extraction_metadata_and_deal_re
     assert result.extraction is extraction
     assert result.validated_game_metadata is game_metadata
     assert result.deal_results == ()
+
+
+def test_cheapshark_validation_success_preserves_ordered_deal_results() -> None:
+    extraction = make_cheapshark_extraction_success()
+    game_metadata = ValidatedCheapSharkGameMetadata(title="Batman")
+    source_mapping = {"storeID": "24", "price": "12.99"}
+    expected_results = (
+        ValidatedCheapSharkDeal.model_validate(source_mapping),
+        CheapSharkDealValidationFailure(
+            index=1,
+            raw={
+                "storeID": "23",
+                "price": "Infinity",
+            },
+            diagnostic_message="price must be a finite number",
+        ),
+        CheapSharkDealExtractionFailure(
+            index=2,
+            raw="incorrect",
+            diagnostic_message="Deal candidate must be a mapping",
+        ),
+    )
+
+    result = CheapSharkValidationSuccess(
+        extraction=extraction,
+        validated_game_metadata=game_metadata,
+        deal_results=expected_results,
+    )
+
+    assert result.deal_results == expected_results
+
+
+def test_validation_failure_preserves_extraction_and_diagnostic_message() -> None:
+    extraction = make_cheapshark_extraction_success()
+    result = CheapSharkValidationFailure(
+        extraction=extraction,
+        diagnostic_message="invalid game metadata",
+    )
+
+    assert result.extraction is extraction
+    assert result.diagnostic_message == "invalid game metadata"
+
+
+@pytest.mark.parametrize(
+    "blank_diagnostic_message",
+    [
+        "",
+        " ",
+        "\n",
+        "\t",
+        "\n\t",
+    ],
+)
+def test_cheapshark_validation_failure_rejects_blank_diagnostic_message(
+    blank_diagnostic_message: str,
+) -> None:
+    extraction = make_cheapshark_extraction_success()
+
+    with pytest.raises(
+        ValueError,
+        match="diagnostic_message must not be empty",
+    ):
+        CheapSharkValidationFailure(
+            extraction=extraction,
+            diagnostic_message=blank_diagnostic_message,
+        )
