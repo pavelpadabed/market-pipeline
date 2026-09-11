@@ -15,6 +15,8 @@ dependencies = [
     "requests>=2.34.2,<3",
     "playwright>=1.61.0,<2",
     "pydantic>=2.13.4,<3",
+    "sqlalchemy>=2.0.52,<3",
+    "psycopg[binary]>=3.3.5,<4",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +26,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires an available PostgreSQL test database",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
