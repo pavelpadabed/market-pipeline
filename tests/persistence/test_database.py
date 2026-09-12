@@ -13,10 +13,12 @@ from market_pipeline.persistence.models import (
     LogicalOffer,
     OfferObservation,
     PipelineRun,
-    PipelineRunOutcome,
     ProcessingFailure,
-    ProcessingStage,
     SourceProduct,
+)
+from market_pipeline.persistence.types import (
+    PipelineRunOutcome,
+    ProcessingStage,
 )
 
 
@@ -46,6 +48,8 @@ def _make_pipeline_run(**overrides) -> PipelineRun:
     started_at = datetime(2026, 9, 9, 19, 34, tzinfo=UTC)
     finished_at = datetime(2026, 9, 9, 19, 34, tzinfo=UTC)
     data = {
+        "requested_source": "cheapshark",
+        "requested_external_product_id": 612,
         "started_at": started_at,
         "finished_at": finished_at,
         "outcome": PipelineRunOutcome.SUCCESS,
@@ -378,6 +382,8 @@ def test_pipeline_run_persists_required_fields_with_generated_identity(
     finished_at = datetime(2026, 9, 9, 19, 1, tzinfo=UTC)
 
     pipeline_run = PipelineRun(
+        requested_source="cheapshark",
+        requested_external_product_id=612,
         started_at=started_at,
         finished_at=finished_at,
         outcome=PipelineRunOutcome.SUCCESS,
@@ -389,9 +395,48 @@ def test_pipeline_run_persists_required_fields_with_generated_identity(
     database_session.refresh(pipeline_run)
 
     assert type(pipeline_run.id) is int
+    assert pipeline_run.requested_source == "cheapshark"
+    assert pipeline_run.requested_external_product_id == 612
     assert pipeline_run.started_at == started_at
     assert pipeline_run.finished_at == finished_at
     assert pipeline_run.outcome is PipelineRunOutcome.SUCCESS
+
+
+@pytest.mark.parametrize(
+    "blank_requested_source",
+    [
+        "",
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\f",
+        "\v",
+        " \t\n\r\f\v ",
+    ],
+    ids=(
+        "empty",
+        "space",
+        "tab",
+        "newline",
+        "carriage-return",
+        "form-feed",
+        "vertical-tab",
+        "mixed",
+    ),
+)
+@pytest.mark.integration
+def test_pipeline_run_rejects_blank_requested_source(
+    blank_requested_source: str,
+    database_session: Session,
+) -> None:
+    pipeline_run = _make_pipeline_run(
+        requested_source=blank_requested_source,
+    )
+    database_session.add(pipeline_run)
+
+    with pytest.raises(IntegrityError):
+        database_session.flush()
 
 
 @pytest.mark.integration

@@ -1,6 +1,5 @@
 from datetime import datetime
 from decimal import Decimal
-from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
@@ -17,6 +16,11 @@ from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
+)
+
+from market_pipeline.persistence.types import (
+    PipelineRunOutcome,
+    ProcessingStage,
 )
 
 
@@ -79,15 +83,13 @@ class LogicalOffer(Base):
     source_seller_id: Mapped[str] = mapped_column(Text)
 
 
-class PipelineRunOutcome(StrEnum):
-    SUCCESS = "success"
-    PARTIAL_FAILURE = "partial_failure"
-    FAILURE = "failure"
-
-
 class PipelineRun(Base):
     __tablename__ = "pipeline_run"
     __table_args__ = (
+        CheckConstraint(
+            "requested_source ~ '[^[:space:]]'",
+            name="ck_pipeline_run_requested_source_not_blank",
+        ),
         CheckConstraint(
             "finished_at >= started_at",
             name="ck_pipeline_run_finished_at_not_before_started_at",
@@ -101,6 +103,10 @@ class PipelineRun(Base):
         BigInteger,
         Identity(always=True),
         primary_key=True,
+    )
+    requested_source: Mapped[str] = mapped_column(Text)
+    requested_external_product_id: Mapped[int] = mapped_column(
+        BigInteger,
     )
     started_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -153,12 +159,6 @@ class OfferObservation(Base):
     )
     price: Mapped[Decimal] = mapped_column(Numeric)
     currency: Mapped[str] = mapped_column(Text)
-
-
-class ProcessingStage(StrEnum):
-    ACQUISITION = "acquisition"
-    EXTRACTION = "extraction"
-    VALIDATION = "validation"
 
 
 class ProcessingFailure(Base):
