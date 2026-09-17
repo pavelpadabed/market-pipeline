@@ -4,6 +4,7 @@ from market_pipeline.extraction.models import (
     CheapSharkDealExtractionFailure,
     CheapSharkExtractionSuccess,
 )
+from market_pipeline.validation.error_formatting import _format_validation_error
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
     CheapSharkDealValidationResult,
@@ -13,19 +14,6 @@ from market_pipeline.validation.models import (
     ValidatedCheapSharkDeal,
     ValidatedCheapSharkGameMetadata,
 )
-
-
-def _format_validation_error(error: ValidationError) -> str:
-    buffer_messages = []
-    for error_value in error.errors():
-        loc = error_value["loc"]
-        msg = error_value["msg"]
-
-        location = ".".join(str(el) for el in loc)
-        message = f"{location}: {msg}"
-        buffer_messages.append(message)
-
-    return "\n".join(buffer_messages)
 
 
 class CheapSharkValidator:

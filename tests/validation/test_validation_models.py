@@ -14,6 +14,9 @@ from market_pipeline.extraction.models import (
 )
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
+    CheapSharkStore,
+    CheapSharkStoreCatalogFailure,
+    CheapSharkStoreCatalogSuccess,
     CheapSharkValidationFailure,
     CheapSharkValidationSuccess,
     ValidatedCheapSharkDeal,
@@ -165,24 +168,39 @@ def test_validated_cheapshark_deal_rejects_non_string_field_value(
 
 
 @pytest.mark.parametrize(
-    "blank_store_id",
+    "invalid_store_id",
     [
         "",
         " ",
         "\n",
         "\t",
         "\n\t",
+        "abc",
+        "-1",
+        "1.5",
+        "1e2",
     ],
 )
-def test_validated_cheapshark_deal_rejects_blank_store_id(
-    blank_store_id: str,
+def test_validated_cheapshark_deal_rejects_invalid_store_id_format(
+    invalid_store_id: str,
 ) -> None:
     source_mapping = {
-        "storeID": blank_store_id,
+        "storeID": invalid_store_id,
         "price": "12.99",
     }
     with pytest.raises(ValidationError):
         ValidatedCheapSharkDeal.model_validate(source_mapping)
+
+
+def test_validated_cheapshark_deal_preserves_surrounding_whitespace_in_store_id() -> None:
+    source_mapping = {
+        "storeID": " 23 ",
+        "price": "12.99",
+    }
+
+    result = ValidatedCheapSharkDeal.model_validate(source_mapping)
+
+    assert result.store_id == " 23 "
 
 
 def test_validated_cheapshark_deal_rejects_non_numeric_price() -> None:
@@ -419,5 +437,163 @@ def test_cheapshark_validation_failure_rejects_blank_diagnostic_message(
     ):
         CheapSharkValidationFailure(
             extraction=extraction,
+            diagnostic_message=blank_diagnostic_message,
+        )
+
+
+def test_cheapshark_store_maps_source_fields_to_python_attributes() -> None:
+    source_mapping = {
+        "storeID": "1",
+        "storeName": "Steam",
+    }
+    result = CheapSharkStore.model_validate(source_mapping)
+
+    assert result.store_id == "1"
+    assert result.store_name == "Steam"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["storeID", "storeName"],
+)
+@pytest.mark.parametrize(
+    "invalid_type",
+    [None, 13, True, b"13"],
+)
+def test_cheapshark_store_rejects_non_string_source_field_value(
+    field_name: str, invalid_type: object,
+) -> None:
+    source_mapping: dict[str, object] = {"storeID": "1", "storeName": "Steam"}
+    source_mapping[field_name] = invalid_type
+    with pytest.raises(ValidationError):
+        CheapSharkStore.model_validate(source_mapping)
+
+
+def test_cheapshark_store_ignores_unknown_source_fields() -> None:
+    source_mapping = {
+        "storeID": "1",
+        "storeName": "Steam",
+        "isActive": 1,
+        "images": {
+            "banner": "/img/stores/banners/0.png",
+            "logo": "/img/stores/logos/0.png",
+            "icon": "/img/stores/icons/0.png",
+        },
+    }
+    expected_result = {
+        "store_id": "1",
+        "store_name": "Steam",
+    }
+    actual_result = CheapSharkStore.model_validate(source_mapping)
+
+    assert actual_result.model_dump() == expected_result
+
+
+@pytest.mark.parametrize(
+    "invalid_store_id",
+    [
+        "",
+        " ",
+        "abc",
+        "-1",
+        "1.5",
+        "1e2",
+    ],
+)
+def test_cheapshark_store_rejects_invalid_store_id_format(
+    invalid_store_id: str,
+) -> None:
+    source_mapping = {"storeID": invalid_store_id, "storeName": "Steam"}
+
+    with pytest.raises(ValidationError):
+        CheapSharkStore.model_validate(source_mapping)
+
+
+@pytest.mark.parametrize(
+    "blank_store_name",
+    [
+        "",
+        " ",
+        "\t",
+        "\n",
+        "\t\n",
+    ],
+)
+def test_cheapshark_store_rejects_blank_store_name(
+    blank_store_name: str,
+) -> None:
+    source_mapping = {"storeID": "1", "storeName": blank_store_name}
+
+    with pytest.raises(ValidationError):
+        CheapSharkStore.model_validate(source_mapping)
+
+
+def test_cheapshark_store_preserves_surrounding_whitespace_in_store_name() -> None:
+    source_mapping = {"storeID": "1", "storeName": " Steam "}
+    result = CheapSharkStore.model_validate(source_mapping)
+
+    assert result.store_name == " Steam "
+
+
+def test_cheapshark_store_catalog_success_preserves_acquisition_and_stores() -> None:
+    acquisition = make_acquisition_success()
+    expected_stores = (
+        CheapSharkStore.model_validate(
+            {
+                "storeID": "1",
+                "storeName": "Steam",
+            }
+        ),
+        CheapSharkStore.model_validate(
+            {
+                "storeID": "2",
+                "storeName": "GamersGate",
+            }
+        ),
+    )
+
+    result = CheapSharkStoreCatalogSuccess(
+        acquisition=acquisition,
+        stores=expected_stores,
+    )
+
+    assert result.acquisition is acquisition
+    assert result.stores == expected_stores
+
+
+def test_store_catalog_failure_preserves_acquisition_and_diagnostic_message() -> None:
+    acquisition = make_acquisition_success()
+    diagnostic_message = "store_id must contain only ASCII decimal digits"
+
+    result = CheapSharkStoreCatalogFailure(
+        acquisition=acquisition,
+        diagnostic_message=diagnostic_message,
+    )
+
+    assert result.acquisition is acquisition
+    assert result.diagnostic_message == diagnostic_message
+
+
+@pytest.mark.parametrize(
+    "blank_diagnostic_message",
+    [
+        "",
+        " ",
+        "\n",
+        "\t",
+        "\n\t",
+    ],
+)
+def test_store_catalog_failure_rejects_blank_diagnostic_message(
+    blank_diagnostic_message: str,
+) -> None:
+    acquisition = make_acquisition_success()
+
+    with pytest.raises(
+        ValueError,
+        match="diagnostic_message must not be empty",
+    ):
+        CheapSharkStoreCatalogFailure(
+            acquisition=acquisition,
             diagnostic_message=blank_diagnostic_message,
         )

@@ -1,8 +1,5 @@
 from datetime import UTC, datetime
 
-import pytest
-from pydantic import ValidationError
-
 from market_pipeline.acquisition.models import (
     AcquisitionMethod,
     AcquisitionSuccess,
@@ -12,16 +9,12 @@ from market_pipeline.extraction.models import (
     CheapSharkDealExtractionFailure,
     CheapSharkExtractionSuccess,
 )
-from market_pipeline.validation.cheapshark_validator import (
-    CheapSharkValidator,
-    _format_validation_error,
-)
+from market_pipeline.validation.cheapshark_validator import CheapSharkValidator
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
     CheapSharkValidationFailure,
     CheapSharkValidationSuccess,
     ValidatedCheapSharkDeal,
-    ValidatedCheapSharkGameMetadata,
 )
 
 
@@ -57,27 +50,6 @@ def make_cheapshark_extraction_success(**overrides) -> CheapSharkExtractionSucce
     data.update(overrides)
 
     return CheapSharkExtractionSuccess(**data)
-
-
-def test_format_validation_error_formats_missing_title_diagnostic_message() -> None:
-    expected_message = "title: Field required"
-    with pytest.raises(ValidationError) as exc:
-        ValidatedCheapSharkGameMetadata.model_validate({})
-    actual_message = _format_validation_error(exc.value)
-
-    assert actual_message == expected_message
-
-
-def test_format_validation_error_formats_multiple_field_diagnostics() -> None:
-    expected_message = (
-        "storeID: Field required\n"
-        "price: Field required"
-    )
-    with pytest.raises(ValidationError) as exc:
-        ValidatedCheapSharkDeal.model_validate({})
-    actual_message = _format_validation_error(exc.value)
-
-    assert actual_message == expected_message
 
 
 def test_validator_preserves_valid_game_metadata_and_empty_deal_results() -> None:

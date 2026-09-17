@@ -9,6 +9,7 @@ from pydantic import (
     field_validator,
 )
 
+from market_pipeline.acquisition.models import AcquisitionSuccess
 from market_pipeline.extraction.models import (
     CheapSharkDealExtractionFailure,
     CheapSharkExtractionSuccess,
@@ -35,8 +36,9 @@ class ValidatedCheapSharkDeal(BaseModel):
     @field_validator("store_id")
     @classmethod
     def validate_store_id(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("store_id must not be blank")
+        stripped_value = value.strip()
+        if not (stripped_value.isascii() and stripped_value.isdecimal()):
+            raise ValueError("store_id must contain only ASCII decimal digits")
         return value
 
     @field_validator("price")
@@ -95,4 +97,46 @@ class CheapSharkValidationFailure:
 type CheapSharkValidationResult = (
     CheapSharkValidationSuccess
     | CheapSharkValidationFailure
+)
+
+
+class CheapSharkStore(BaseModel):
+    model_config = ConfigDict(strict=True, extra="ignore")
+    store_id: str = Field(alias="storeID")
+    store_name: str = Field(alias="storeName")
+
+    @field_validator("store_id")
+    @classmethod
+    def validate_store_id(cls, value: str) -> str:
+        if not (value.isascii() and value.isdecimal()):
+            raise ValueError("store_id must contain only ASCII decimal digits")
+        return value
+
+    @field_validator("store_name")
+    @classmethod
+    def validate_store_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("store_name must not be blank")
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class CheapSharkStoreCatalogSuccess:
+    acquisition: AcquisitionSuccess
+    stores: tuple[CheapSharkStore, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CheapSharkStoreCatalogFailure:
+    acquisition: AcquisitionSuccess
+    diagnostic_message: str
+
+    def __post_init__(self) -> None:
+        if not self.diagnostic_message.strip():
+            raise ValueError("diagnostic_message must not be empty")
+
+
+type CheapSharkStoreCatalogResult = (
+    CheapSharkStoreCatalogSuccess
+    | CheapSharkStoreCatalogFailure
 )
