@@ -1,139 +1,175 @@
 # Market Pipeline
 
-An early-stage Python project for evaluating data-access strategies for marketplace price monitoring.
+Market Pipeline is an in-progress Python backend project for acquiring,
+validating, normalizing, and persisting product-offer data from permitted
+external sources.
 
-The current repository contains small diagnostic probes rather than a production scraper or a complete data pipeline. Their purpose is to determine whether a product page can be accessed through a regular HTTP request or requires a JavaScript-capable browser.
+The current vertical slice uses the public CheapShark REST API to demonstrate
+explicit pipeline boundaries, typed success and failure contracts, partial
+failure preservation, runtime validation with Pydantic, and PostgreSQL
+persistence through SQLAlchemy 2.
 
-## Current scope
+The repository is under active development. It currently provides the tested
+backend boundaries and persistence layer, but not yet a complete CLI, report
+exporter, scheduler, or graphical interface.
 
-The first diagnostic target is a public product offer on Allegro.
+## Implemented scope
 
-Two access methods have been tested:
+```text
+HTTP transport
+    -> CheapShark acquisition adapters
+    -> extraction
+    -> Pydantic validation
+    -> normalization
+    -> PostgreSQL persistence
+    -> current-offer and price-history queries
+```
 
-| Method | Result |
-| --- | --- |
-| `requests` with browser-like headers | HTTP `403`; product content was not returned |
-| Playwright Chromium, headed mode | HTTP `200`; the product page rendered and the raw price was extracted |
-| Playwright Chromium, headless mode | HTTP `403`; the probe classified the response and exited without waiting for unavailable product data |
+Implemented capabilities include:
 
-These observations describe a small number of controlled tests against one offer. They do not establish long-term stability, an allowed request rate, or production suitability.
+- a shared HTTP GET transport with explicit handling of network and request
+  failures;
+- source-specific acquisition adapters for CheapShark game data and its store
+  catalogue;
+- typed acquisition success and failure DTOs with request provenance;
+- JSON extraction with whole-response and per-deal failure modelling;
+- strict Pydantic validation for game metadata, deal prices, and store catalogue
+  records;
+- normalization of validated prices to `Decimal` while preserving prior-stage
+  failures;
+- SQLAlchemy 2 models for source products, logical offers, pipeline runs,
+  observations, and processing failures;
+- PostgreSQL-backed writing with reuse of stable business identities;
+- queries for current offers from the latest run and chronological offer-price
+  history;
+- deterministic unit tests and PostgreSQL integration tests.
+
+## Architecture
+
+Each stage has an explicit input and result contract. A successful transport
+request does not imply successful extraction, and successful extraction does
+not imply valid business data.
+
+```text
+AcquisitionResult
+    -> CheapSharkExtractionResult
+    -> CheapSharkValidationResult
+    -> CheapSharkNormalizationSuccess
+    -> persistence input DTOs
+    -> PostgreSQL
+```
+
+The implementation deliberately preserves provenance and partial failures.
+For example, one malformed deal does not discard valid deals returned in the
+same response. Persistence models are also kept separate from boundary DTOs so
+that external API contracts do not leak into the database model.
+
+The original MVP design baseline is documented in
+[`docs/architecture.md`](docs/architecture.md). Implementation evidence has
+since narrowed the first source to CheapShark and moved PostgreSQL persistence
+ahead of report export; this README describes the current repository state.
+
+## Technology stack
+
+- Python 3.13+
+- Requests
+- Pydantic 2
+- SQLAlchemy 2
+- PostgreSQL with Psycopg 3
+- Pytest
+- Playwright for controlled browser diagnostics only
+- `uv` for dependency locking and project commands
 
 ## Project structure
 
 ```text
-Market Pipeline/
-├── http_diagnostics/
-│   ├── __init__.py
-│   ├── requests_probe.py
-│   └── playwright_probe.py
-├── .gitignore
-└── README.md
+src/market_pipeline/
+├── acquisition/      # HTTP transport and source acquisition adapters
+├── extraction/       # CheapShark response-shape extraction
+├── validation/       # Pydantic boundary models and validators
+├── normalization/    # trusted normalized offer values
+└── persistence/      # SQLAlchemy models, writer, and queries
+
+tests/
+├── acquisition/
+├── extraction/
+├── validation/
+├── normalization/
+└── persistence/
+
+http_diagnostics/     # early HTTP and Playwright feasibility probes
+docs/                 # architecture documentation
 ```
-
-### `requests_probe.py`
-
-Sends a direct HTTP request and reports:
-
-- response status;
-- final URL;
-- content type;
-- response body length;
-- a short body preview.
-
-### `playwright_probe.py`
-
-Starts Chromium and reports:
-
-- final URL;
-- page title;
-- main response status or failure verdict;
-- cookie-consent action when the real product page is available;
-- raw text from the price block.
-
-The probe separates expected HTTP outcomes from browser errors:
-
-- `if / elif / else` classifies the main response;
-- `try / except` handles an optional cookie banner;
-- `try / finally` guarantees browser cleanup.
-
-## Requirements
-
-The probes were developed with:
-
-- Python `3.13.5`;
-- Requests `2.34.2`;
-- Playwright `1.61.0`;
-- Chromium installed through Playwright.
 
 ## Local setup
 
-Create and activate a virtual environment:
+Requirements:
+
+- Python 3.13 or newer;
+- `uv`;
+- PostgreSQL for integration tests.
+
+Create the environment and install the locked dependencies:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+uv sync
 ```
 
-Install the Python dependencies and Chromium:
+Run the deterministic test suite without PostgreSQL integration tests:
 
 ```bash
-python -m pip install requests playwright
-playwright install chromium
+uv run pytest -m "not integration"
 ```
 
-## Running the diagnostics
+## PostgreSQL integration tests
 
-Run the direct HTTP probe:
+Integration tests require a dedicated local database named
+`market_pipeline_test`. The test fixture verifies the database name before
+creating the schema and rolls individual test changes back.
+
+Create the test database with PostgreSQL tooling appropriate for your system,
+then run:
 
 ```bash
-python http_diagnostics/requests_probe.py \
-  --url "https://example.com/product"
+MARKET_PIPELINE_TEST_DATABASE_URL="postgresql+psycopg:///market_pipeline_test" \
+  uv run pytest tests/persistence -m integration
 ```
 
-Run the Playwright probe:
+Do not point this variable at a development or production database.
 
-```bash
-python http_diagnostics/playwright_probe.py \
-  --url "https://example.com/product"
-```
+## Current development direction
 
-Both commands require `--url`. Run either script with `--help` to view its CLI usage without making a network request.
+The next narrow vertical slice is the presentation and output boundary:
 
-The browser mode is currently selected in `playwright_probe.py`:
+1. map persisted current-offer query DTOs and the validated CheapShark store
+   catalogue into user-facing report rows;
+2. export those rows to an `.xlsx` report;
+3. add a small application use case and CLI entry point without coupling the
+   pipeline core to the interface.
 
-```python
-browser = pw.chromium.launch(headless=True)
-```
-
-Use `headless=False` only for an explicit headed diagnostic run. Changing the browser mode may change the response returned by a website.
-
-## Interpretation
-
-A successful navigation status does not by itself prove that the expected product page was returned. Diagnostic code should also verify page identity, expected content, and required fields.
-
-Likewise, an HTTP `403` is useful data rather than an unexpected Python failure. The probe records the outcome and avoids waiting for locators that cannot exist on a blocked response.
+GUI, scheduling, concurrency, automatic product matching, currency conversion,
+and additional marketplace adapters remain future candidates rather than
+current commitments.
 
 ## Responsible use
 
-This repository is intended for learning and technical feasibility assessment.
+This project prefers official APIs, feeds, or explicit permission over browser
+automation. It does not implement CAPTCHA bypass, fingerprint spoofing, stealth
+plugins, proxy rotation, credential misuse, or other protection-evasion
+techniques.
 
-Before automating data collection from any website:
+Live network and browser diagnostics are kept separate from deterministic unit
+tests. Credentials, cookies, browser state, tokens, customer data, local
+environment files, and development journals must not be committed.
 
-- review the website's current terms of service and robots policies;
-- prefer an official API, partner feed, or written permission;
-- avoid excessive traffic;
-- do not implement CAPTCHA bypass, fingerprint spoofing, stealth plugins, proxy rotation, or other protection-evasion techniques;
-- do not commit credentials, cookies, browser storage state, tokens, or customer data.
+## Project status
 
-The current Allegro results demonstrate technical behavior only. They do not grant permission for commercial automated collection.
+Active development. The repository is published as an engineering portfolio
+project and a record of an evolving backend system; it is not yet a packaged
+end-user application.
 
-## Possible next steps
+## License
 
-Further work depends on confirmed business requirements and authorized data access. Potential next steps include:
-
-1. move target URLs from source code into configuration;
-2. return structured diagnostic results instead of console-only output;
-3. capture timestamps and limited failure artifacts;
-4. add tests for response classification and parsing;
-5. evaluate additional sources with the least expensive method first;
-6. design normalization, comparison, currency conversion, and export stages only after source access is validated.
+No open-source license is currently granted. The source is publicly available
+for review, but reuse and redistribution are not permitted unless a license is
+added later.
