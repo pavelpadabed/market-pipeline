@@ -15,15 +15,19 @@ from market_pipeline.normalization.models import (
     CheapSharkGameRequest,
     CheapSharkNormalizationSuccess,
     NormalizedCheapSharkOffer,
+    NormalizedCheapSharkStore,
+    NormalizedCheapSharkStoreCatalog,
 )
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
+    CheapSharkStore,
+    CheapSharkStoreCatalogSuccess,
     CheapSharkValidationSuccess,
     ValidatedCheapSharkGameMetadata,
 )
 
 
-def make_acquisition_success() -> AcquisitionSuccess:
+def make_acquisition_success(**overrides) -> AcquisitionSuccess:
     started_at = datetime(2026, 8, 19, 10, 8, tzinfo=UTC)
     finished_at = datetime(2026, 8, 19, 10, 9, tzinfo=UTC)
     data = {
@@ -36,6 +40,7 @@ def make_acquisition_success() -> AcquisitionSuccess:
         "content_type": "application/json",
         "content": '{"info": {}, "deals": []}',
     }
+    data.update(overrides)
 
     return AcquisitionSuccess(**data)
 
@@ -174,3 +179,66 @@ def test_cheapshark_normalization_success_preserves_ordered_offer_results() -> N
     assert preserved_validation is validation_failure
     assert preserved_extraction is extraction_failure
     assert result.offer_results == expected_offer_results
+
+
+def test_normalized_cheapshark_store_preserves_normalized_values() -> None:
+    expected_store_id = "1"
+    expected_store_name = "Steam"
+
+    result = NormalizedCheapSharkStore(
+        store_id=expected_store_id,
+        store_name=expected_store_name,
+    )
+
+    assert isinstance(result, NormalizedCheapSharkStore)
+    assert result.store_id == expected_store_id
+    assert result.store_name == expected_store_name
+
+
+def test_normalized_cheapshark_store_catalog_preserves_validation_and_ordered_stores() -> None:
+    content = (
+        '['
+            '{"storeID": "1", "storeName": "Steam"},'
+            '{"storeID": "2", "storeName": "GamersGate}'
+        ']'
+    )
+    acquisition = make_acquisition_success(content=content)
+    validation = CheapSharkStoreCatalogSuccess(
+        acquisition=acquisition,
+        stores=(
+            CheapSharkStore.model_validate(
+                {
+                    "storeID": "1",
+                    "storeName": "Steam",
+                },
+            ),
+            CheapSharkStore.model_validate(
+                {
+                    "storeID": "2",
+                    "storeName": "GamersGate",
+                },
+            ),
+        ),
+    )
+
+    result = NormalizedCheapSharkStoreCatalog(
+        validation=validation,
+        stores=(
+            NormalizedCheapSharkStore(
+                store_id="1",
+                store_name="Steam",
+            ),
+            NormalizedCheapSharkStore(
+                store_id="2",
+                store_name="GamersGate",
+            ),
+        ),
+    )
+
+    assert isinstance(result, NormalizedCheapSharkStoreCatalog)
+    assert result.validation is validation
+    (steam, gamers_gate) = result.stores
+    assert steam.store_id == "1"
+    assert steam.store_name == "Steam"
+    assert gamers_gate.store_id == "2"
+    assert gamers_gate.store_name == "GamersGate"
