@@ -10,10 +10,11 @@ from market_pipeline.acquisition.models import (
     AcquisitionSuccess,
 )
 
-STORES_ENDPOINT = "https://www.cheapshark.com/api/1.0/stores"
+
+GAMES_ENDPOINT = "https://www.cheapshark.com/api/1.0/games"
 
 
-class CheapSharkStoresAcquirer:
+class CheapSharkGameSearchAcquirer:
     def __init__(
         self,
         transport: HttpGetTransport,
@@ -47,12 +48,12 @@ class CheapSharkStoresAcquirer:
             retry_after_seconds=retry_after_seconds,
         )
 
-    def acquire(self) -> AcquisitionResult:
-        params = None
+    def acquire(self, query: str) -> AcquisitionResult:
+        params = {"title": query}
         headers = {"User-Agent": self.user_agent}
 
         http_result = self.transport.get(
-            STORES_ENDPOINT,
+            GAMES_ENDPOINT,
             params=params,
             headers=headers,
         )
@@ -60,11 +61,11 @@ class CheapSharkStoresAcquirer:
         if isinstance(http_result, AcquisitionFailure):
             return http_result
 
-        status_code = http_result.status_code
         requested_url = http_result.requested_url
-        final_url = http_result.final_url
         started_at = http_result.started_at
         finished_at = http_result.finished_at
+        final_url = http_result.final_url
+        status_code = http_result.status_code
         content_type = http_result.headers.get("Content-Type")
 
         if status_code == 429:
@@ -89,6 +90,7 @@ class CheapSharkStoresAcquirer:
                 content_type=content_type,
                 retry_after_seconds=retry_after_seconds,
             )
+
         if not 200 <= status_code <= 299:
             return self._build_failure(
                 requested_url=requested_url,
@@ -102,6 +104,7 @@ class CheapSharkStoresAcquirer:
                 status_code=status_code,
                 content_type=content_type,
             )
+
         if content_type is None:
             return self._build_failure(
                 requested_url=requested_url,
@@ -113,6 +116,7 @@ class CheapSharkStoresAcquirer:
                 status_code=status_code,
                 content_type=None,
             )
+
         media_type, _, _ = content_type.partition(";")
         if media_type.strip().lower() != "application/json":
             return self._build_failure(
@@ -120,12 +124,15 @@ class CheapSharkStoresAcquirer:
                 started_at=started_at,
                 finished_at=finished_at,
                 outcome=AcquisitionFailureOutcome.UNEXPECTED_CONTENT,
-                diagnostic_message=f"Unsupported Content-Type: {content_type}",
+                diagnostic_message=(
+                    f"Unsupported Content-Type: {content_type}"
+                ),
                 final_url=final_url,
                 status_code=status_code,
                 content_type=content_type,
             )
         content = http_result.content
+
         if not content.strip():
             return self._build_failure(
                 requested_url=requested_url,
@@ -150,13 +157,14 @@ class CheapSharkStoresAcquirer:
                 status_code=status_code,
                 content_type=content_type,
             )
+
         return AcquisitionSuccess(
-            requested_url=http_result.requested_url,
+            requested_url=requested_url,
             method=AcquisitionMethod.HTTP,
-            started_at=http_result.started_at,
-            finished_at=http_result.finished_at,
-            final_url=http_result.final_url,
-            status_code=http_result.status_code,
+            started_at=started_at,
+            finished_at=finished_at,
+            final_url=final_url,
+            status_code=status_code,
             content_type=content_type,
-            content=http_result.content,
+            content=content,
         )

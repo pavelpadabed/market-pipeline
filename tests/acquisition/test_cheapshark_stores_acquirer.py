@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from market_pipeline.acquisition.cheapshark_stores_acquirer import (
     CheapSharkStoresAcquirer,
 )
@@ -352,14 +354,20 @@ def test_cheapshark_stores_acquirer_handles_missing_retry_after_for_429() -> Non
     assert actual_failure == expected_failure
 
 
-def test_cheapshark_stores_acquirer_ignores_non_numeric_retry_after_for_429() -> None:
+@pytest.mark.parametrize(
+    "invalid_retry_after",
+    ["invalid", "-5"],
+)
+def test_cheapshark_stores_acquirer_ignores_invalid_retry_after_for_429(
+    invalid_retry_after: str,
+) -> None:
     user_agent = USER_AGENT
 
     http_result = _make_http_snapshot(
         status_code=429,
         headers={
             "Content-Type": "application/json",
-            "Retry-After": "invalid",
+            "Retry-After": invalid_retry_after,
         },
         content='{"error": "too many requests"}',
     )
