@@ -14,6 +14,9 @@ from market_pipeline.extraction.models import (
 )
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
+    CheapSharkGameCandidate,
+    CheapSharkGameSearchFailure,
+    CheapSharkGameSearchSuccess,
     CheapSharkStore,
     CheapSharkStoreCatalogFailure,
     CheapSharkStoreCatalogSuccess,
@@ -23,8 +26,12 @@ from market_pipeline.validation.models import (
     ValidatedCheapSharkGameMetadata,
 )
 
+GAME_SEARCH_REQUESTED_URL = "https://www.cheapshark.com/api/1.0/games?title=Batman"
+GAME_SEARCH_FINAL_URL = "https://www.cheapshark.com/api/1.0/games?title=Batman"
+GAME_SEARCH_CONTENT = '[{"gameID": "1", "external": "Batman"}]'
 
-def make_acquisition_success() -> AcquisitionSuccess:
+
+def make_acquisition_success(**overrides: object) -> AcquisitionSuccess:
     started_at = datetime(
         2026, 8, 17, 17, tzinfo=UTC
     )
@@ -41,8 +48,16 @@ def make_acquisition_success() -> AcquisitionSuccess:
         "content_type": "application/json",
         "content": '{"info": {}, "deals": []}',
     }
-
+    data.update(overrides)
     return AcquisitionSuccess(**data)
+
+
+def _make_acquisition_success_for_game_search() -> AcquisitionSuccess:
+    return make_acquisition_success(
+        requested_url=GAME_SEARCH_REQUESTED_URL,
+        final_url=GAME_SEARCH_FINAL_URL,
+        content=GAME_SEARCH_CONTENT,
+    )
 
 
 def make_cheapshark_extraction_success() -> CheapSharkExtractionSuccess:
@@ -594,6 +609,191 @@ def test_store_catalog_failure_rejects_blank_diagnostic_message(
         match="diagnostic_message must not be empty",
     ):
         CheapSharkStoreCatalogFailure(
+            acquisition=acquisition,
+            diagnostic_message=blank_diagnostic_message,
+        )
+
+
+def test_cheapshark_game_candidate_maps_source_fields_to_python_attributes() -> None:
+    source_mapping = {"gameID": "1", "external": "Batman"}
+
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+
+    assert candidate.game_id == "1"
+    assert candidate.title == "Batman"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["gameID", "external"],
+)
+@pytest.mark.parametrize(
+    "invalid_type",
+    [None, 13, 13.3, True, b"13"],
+)
+def test_cheapshark_game_candidate_rejects_non_string_source_field_value(
+    field_name: str,
+    invalid_type: object,
+) -> None:
+    source_mapping: dict[str, object] = {
+        "gameID": "1",
+        "external": "Batman",
+    }
+    source_mapping[field_name] = invalid_type
+
+    with pytest.raises(ValidationError):
+        CheapSharkGameCandidate.model_validate(source_mapping)
+
+
+@pytest.mark.parametrize(
+    "invalid_game_id",
+    [
+        "",
+        " ",
+        "abc",
+        "-1",
+        "1.5",
+        "1e2",
+        "١٢٣",
+    ],
+)
+def test_cheapshark_game_candidate_rejects_invalid_game_id_format(
+    invalid_game_id: str,
+) -> None:
+    source_mapping = {
+        "gameID": invalid_game_id,
+        "external": "Batman",
+    }
+
+    with pytest.raises(ValidationError):
+        CheapSharkGameCandidate.model_validate(source_mapping)
+
+
+def test_cheapshark_game_candidate_preserves_surrounding_whitespace_in_game_id() -> None:
+    source_mapping = {
+        "gameID": " 1 ",
+        "external": "Batman",
+    }
+
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+
+    assert candidate.game_id == " 1 "
+
+
+@pytest.mark.parametrize(
+    "blank_title",
+    [
+        "",
+        " ",
+        "\t",
+        "\n",
+        " \t\n ",
+    ],
+)
+def test_cheapshark_game_candidate_rejects_blank_title(
+    blank_title: str,
+) -> None:
+    source_mapping = {
+        "gameID": "1",
+        "external": blank_title,
+    }
+
+    with pytest.raises(
+        ValidationError,
+        match="title must not be blank",
+    ):
+        CheapSharkGameCandidate.model_validate(source_mapping)
+
+
+def test_cheapshark_game_candidate_preserves_surrounding_whitespace_in_title() -> None:
+    source_mapping = {
+        "gameID": "1",
+        "external": " Batman ",
+    }
+
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+
+    assert candidate.title == " Batman "
+
+
+def test_cheapshark_game_candidate_ignores_unknown_source_fields() -> None:
+    source_mapping = {
+        "gameID": "107598",
+        "steamAppID": "208650",
+        "cheapest": "3.99",
+        "cheapestDealID": "%2BRR8iNYa2ZB%2FIhfZml8B1USYGhQVeYAv0Tl8JPkZ8UM%3D",
+        "external": "Batman: Arkham Knight",
+        "internalName": "BATMANARKHAMKNIGHT",
+        "thumb": (
+            "https://cdn.cloudflare.steamstatic.com/steam/apps/208650/"
+            "capsule_sm_120.jpg?t=1681938976"
+        ),
+    }
+    expected_result = {
+        "game_id": "107598",
+        "title": "Batman: Arkham Knight",
+    }
+
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+
+    assert candidate.model_dump() == expected_result
+
+
+def test_cheapshark_game_search_success_preserves_acquisition_and_games() -> None:
+    acquisition = make_acquisition_success(
+        requested_url=GAME_SEARCH_REQUESTED_URL,
+        final_url=GAME_SEARCH_FINAL_URL,
+        content=GAME_SEARCH_CONTENT,
+    )
+    source_mapping = {"gameID": "1", "external": "Batman"}
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+
+    expected_games = (candidate,)
+
+    result = CheapSharkGameSearchSuccess(
+        acquisition=acquisition,
+        games=expected_games,
+    )
+
+    assert isinstance(result, CheapSharkGameSearchSuccess)
+    assert result.acquisition is acquisition
+    assert result.games == expected_games
+
+
+def test_cheapshark_game_search_failure_preserves_acquisition_and_diagnostic_message() -> None:
+    acquisition = _make_acquisition_success_for_game_search()
+    diagnostic_message = "game_id must contain only ASCII decimal digits"
+
+    result = CheapSharkGameSearchFailure(
+        acquisition=acquisition,
+        diagnostic_message=diagnostic_message,
+    )
+
+    assert isinstance(result, CheapSharkGameSearchFailure)
+    assert result.acquisition is acquisition
+    assert result.diagnostic_message == diagnostic_message
+
+
+@pytest.mark.parametrize(
+    "blank_diagnostic_message",
+    [
+        "",
+        " ",
+        "\t",
+        "\n",
+        " \t\n ",
+    ],
+)
+def test_cheapshark_game_search_failure_rejects_blank_diagnostic_message(
+    blank_diagnostic_message: str,
+) -> None:
+    acquisition = _make_acquisition_success_for_game_search()
+
+    with pytest.raises(
+        ValueError,
+        match="diagnostic_message must not be empty",
+    ):
+        CheapSharkGameSearchFailure(
             acquisition=acquisition,
             diagnostic_message=blank_diagnostic_message,
         )

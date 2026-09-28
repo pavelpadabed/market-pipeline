@@ -140,3 +140,46 @@ type CheapSharkStoreCatalogResult = (
     CheapSharkStoreCatalogSuccess
     | CheapSharkStoreCatalogFailure
 )
+
+
+class CheapSharkGameCandidate(BaseModel):
+    model_config = ConfigDict(strict=True, extra="ignore")
+    game_id: str = Field(alias="gameID")
+    title: str = Field(alias="external")
+
+    @field_validator("game_id")
+    @classmethod
+    def validate_game_id(cls, value: str) -> str:
+        stripped_value = value.strip()
+        if not (stripped_value.isascii() and stripped_value.isdecimal()):
+            raise ValueError("game_id must contain only ASCII decimal digits")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("title must not be blank")
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class CheapSharkGameSearchSuccess:
+    acquisition: AcquisitionSuccess
+    games: tuple[CheapSharkGameCandidate, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CheapSharkGameSearchFailure:
+    acquisition: AcquisitionSuccess
+    diagnostic_message: str
+
+    def __post_init__(self) -> None:
+        if not self.diagnostic_message.strip():
+            raise ValueError("diagnostic_message must not be empty")
+
+
+type CheapSharkGameSearchResult = (
+    CheapSharkGameSearchSuccess
+    | CheapSharkGameSearchFailure
+)
