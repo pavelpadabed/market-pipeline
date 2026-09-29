@@ -6,8 +6,9 @@ from market_pipeline.extraction.models import (
 )
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
-    CheapSharkValidationSuccess,
+    CheapSharkGameSearchSuccess,
     CheapSharkStoreCatalogSuccess,
+    CheapSharkValidationSuccess,
 )
 
 
@@ -51,3 +52,15 @@ class NormalizedCheapSharkStore:
 class NormalizedCheapSharkStoreCatalog:
     validation: CheapSharkStoreCatalogSuccess
     stores: tuple[NormalizedCheapSharkStore, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedCheapSharkGameCandidate:
+    game_id: int
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedCheapSharkGameSearch:
+    validation: CheapSharkGameSearchSuccess
+    games: tuple[NormalizedCheapSharkGameCandidate, ...]

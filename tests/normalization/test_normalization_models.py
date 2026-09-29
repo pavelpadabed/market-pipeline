@@ -14,12 +14,16 @@ from market_pipeline.extraction.models import (
 from market_pipeline.normalization.models import (
     CheapSharkGameRequest,
     CheapSharkNormalizationSuccess,
+    NormalizedCheapSharkGameCandidate,
+    NormalizedCheapSharkGameSearch,
     NormalizedCheapSharkOffer,
     NormalizedCheapSharkStore,
     NormalizedCheapSharkStoreCatalog,
 )
 from market_pipeline.validation.models import (
     CheapSharkDealValidationFailure,
+    CheapSharkGameCandidate,
+    CheapSharkGameSearchSuccess,
     CheapSharkStore,
     CheapSharkStoreCatalogSuccess,
     CheapSharkValidationSuccess,
@@ -43,6 +47,23 @@ def make_acquisition_success(**overrides) -> AcquisitionSuccess:
     data.update(overrides)
 
     return AcquisitionSuccess(**data)
+
+
+def _make_acquisition_success_for_game_search() -> AcquisitionSuccess:
+    return make_acquisition_success(
+        requested_url="https://www.cheapshark.com/api/1.0/games?title=Batman",
+        final_url="https://www.cheapshark.com/api/1.0/games?title=Batman",
+        content='[{"gameID": "1", "external": "Batman"}]',
+    )
+
+
+def _make_game_search_validation_success(**overrides) -> CheapSharkGameSearchSuccess:
+    data = {
+        "acquisition": _make_acquisition_success_for_game_search(),
+        "games": (),
+    }
+    data.update(overrides)
+    return CheapSharkGameSearchSuccess(**data)
 
 
 def make_cheapshark_extraction_success() -> CheapSharkExtractionSuccess:
@@ -242,3 +263,39 @@ def test_normalized_cheapshark_store_catalog_preserves_validation_and_ordered_st
     assert steam.store_name == "Steam"
     assert gamers_gate.store_id == "2"
     assert gamers_gate.store_name == "GamersGate"
+
+
+def test_normalized_cheapshark_game_candidate_preserves_game_id_and_title() -> None:
+    expected_game_id = 1
+    expected_title = "Batman"
+
+    result = NormalizedCheapSharkGameCandidate(
+        game_id=expected_game_id,
+        title=expected_title,
+    )
+
+    assert isinstance(result, NormalizedCheapSharkGameCandidate)
+    assert result.game_id == expected_game_id
+    assert result.title == expected_title
+
+
+def test_normalized_cheapshark_game_search_preserves_validation_and_games() -> None:
+    source_mapping = {"gameID": "1", "external": "Batman"}
+    candidate = CheapSharkGameCandidate.model_validate(source_mapping)
+    validation = _make_game_search_validation_success(
+        games=(candidate,),
+    )
+
+    expected_normalized_candidate = NormalizedCheapSharkGameCandidate(
+        game_id=1,
+        title="Batman",
+    )
+    result = NormalizedCheapSharkGameSearch(
+        validation=validation,
+        games=(expected_normalized_candidate,),
+    )
+
+    assert isinstance(result, NormalizedCheapSharkGameSearch)
+    assert result.validation is validation
+    normalized_candidate, = result.games
+    assert normalized_candidate == expected_normalized_candidate
