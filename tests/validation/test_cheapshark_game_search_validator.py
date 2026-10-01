@@ -56,7 +56,7 @@ def test_game_search_validator_returns_failure_when_any_candidate_is_invalid() -
         content=(
             '['
             '{"gameID": "1", "external": "Batman"},'
-            '{"gameID": "abc", "external": "The Witcher 3"}'
+            '{"gameID": "abc", "external": "LEGO Batman"}'
             ']'
         ),
     )

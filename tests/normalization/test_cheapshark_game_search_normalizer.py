@@ -68,7 +68,7 @@ def test_cheapshark_game_search_normalizer_normalizes_candidate_and_preserves_va
 def test_cheapshark_game_search_normalizer_preserves_candidate_source_order() -> None:
     content = (
         "["
-        '{"gameID": "2", "external": "The Witcher 3"},'
+        '{"gameID": "2", "external": "LEGO Batman"},'
         '{"gameID": "1", "external": "Batman"}'
         "]"
     )
@@ -77,18 +77,21 @@ def test_cheapshark_game_search_normalizer_preserves_candidate_source_order() ->
     )
 
     batman_source_mapping = {"gameID": "1", "external": "Batman"}
-    witcher_source_mapping = {"gameID": "2", "external": "The Witcher 3"}
+    lego_batman_source_mapping = {
+        "gameID": "2",
+        "external": "LEGO Batman",
+    }
 
     batman_candidate = CheapSharkGameCandidate.model_validate(
         batman_source_mapping,
     )
-    witcher_candidate = CheapSharkGameCandidate.model_validate(
-        witcher_source_mapping,
+    lego_batman_candidate = CheapSharkGameCandidate.model_validate(
+        lego_batman_source_mapping,
     )
 
     validation = CheapSharkGameSearchSuccess(
         acquisition=acquisition,
-        games=(witcher_candidate, batman_candidate),
+        games=(lego_batman_candidate, batman_candidate),
     )
 
     normalizer = CheapSharkGameSearchNormalizer()
@@ -97,10 +100,10 @@ def test_cheapshark_game_search_normalizer_preserves_candidate_source_order() ->
 
     assert isinstance(result, NormalizedCheapSharkGameSearch)
     assert result.validation is validation
-    normalized_witcher, normalized_batman = result.games
-    assert isinstance(normalized_witcher, NormalizedCheapSharkGameCandidate)
-    assert normalized_witcher.game_id == 2
-    assert normalized_witcher.title == "The Witcher 3"
+    normalized_lego_batman, normalized_batman = result.games
+    assert isinstance(normalized_lego_batman, NormalizedCheapSharkGameCandidate)
+    assert normalized_lego_batman.game_id == 2
+    assert normalized_lego_batman.title == "LEGO Batman"
     assert isinstance(normalized_batman, NormalizedCheapSharkGameCandidate)
     assert normalized_batman.game_id == 1
     assert normalized_batman.title == "Batman"
