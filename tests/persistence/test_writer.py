@@ -2,9 +2,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from market_pipeline.persistence.exceptions import (
+    PipelineRunPersistenceError,
+)
 from market_pipeline.persistence.inputs import (
     CompletedPipelineRunInput,
     OfferObservationInput,
@@ -280,3 +283,76 @@ def test_sqlalchemy_pipeline_run_writer_reuses_logical_offer_across_runs(
         observation.logical_offer_id == returned_logical_offer.id
         for observation in returned_offer_observations
     )
+
+
+@pytest.mark.integration
+def test_sqlalchemy_pipeline_run_writer_commits_completed_run(
+    database_committable_session: Session,
+    database_engine: Engine,
+) -> None:
+    completed_run = _make_completed_run(
+        observations=(),
+        failures=(),
+    )
+
+    writer = SqlAlchemyPipelineRunWriter(database_committable_session)
+    writer.persist(completed_run)
+
+    with Session(database_engine) as test_session:
+        returned_source_product = test_session.scalars(
+            select(SourceProduct)
+        ).one()
+
+    assert returned_source_product.title == "Batman"
+
+
+@pytest.mark.integration
+def test_sqlalchemy_pipeline_run_writer_rolls_back_and_raises_on_persistence_error(
+    database_committable_session: Session,
+) -> None:
+    invalid_product = ProductInput(
+        source="cheapshark",
+        external_product_id=2**63,
+        title="Batman",
+    )
+    completed_run = _make_completed_run(
+        product=invalid_product,
+    )
+
+    writer = SqlAlchemyPipelineRunWriter(database_committable_session)
+
+    with pytest.raises(
+        PipelineRunPersistenceError,
+        match="Failed to persist completed pipeline run",
+    ):
+        writer.persist(completed_run)
+
+    database_committable_session.execute(select(1))
+
+
+@pytest.mark.integration
+def test_sqlalchemy_pipeline_run_writer_leaves_no_partial_run_on_persistence_error(
+    database_committable_session: Session,
+) -> None:
+    invalid_product = ProductInput(
+        source="cheapshark",
+        external_product_id=2**63,
+        title="Batman",
+    )
+    completed_run = _make_completed_run(
+        product=invalid_product,
+    )
+
+    writer = SqlAlchemyPipelineRunWriter(database_committable_session)
+
+    with pytest.raises(
+        PipelineRunPersistenceError,
+        match="Failed to persist completed pipeline run",
+    ):
+        writer.persist(completed_run)
+
+    returned_pipeline_run = database_committable_session.scalars(
+        select(PipelineRun)
+    ).all()
+
+    assert len(returned_pipeline_run) == 0

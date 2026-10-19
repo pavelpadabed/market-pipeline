@@ -1,0 +1,2 @@
+class PipelineRunPersistenceError(Exception):
+    pass

@@ -2,10 +2,22 @@ import os
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import (
+    Engine,
+    create_engine,
+    delete,
+    text,
+)
 from sqlalchemy.orm import Session
 
-from market_pipeline.persistence.models import Base
+from market_pipeline.persistence.models import (
+    Base,
+    LogicalOffer,
+    OfferObservation,
+    PipelineRun,
+    ProcessingFailure,
+    SourceProduct,
+)
 
 
 @pytest.fixture(scope="session")
@@ -49,6 +61,24 @@ def database_session(
         session.close()
 
         transaction.rollback()
+
+
+@pytest.fixture(scope="function")
+def database_committable_session(
+    database_engine: Engine,
+    database_schema: None,
+) -> Iterator[Session]:
+    try:
+        with Session(database_engine) as session:
+            yield session
+    finally:
+        with Session(database_engine) as cleanup_session:
+            cleanup_session.execute(delete(ProcessingFailure))
+            cleanup_session.execute(delete(OfferObservation))
+            cleanup_session.execute(delete(PipelineRun))
+            cleanup_session.execute(delete(LogicalOffer))
+            cleanup_session.execute(delete(SourceProduct))
+            cleanup_session.commit()
 
 
 @pytest.fixture(scope="session")
