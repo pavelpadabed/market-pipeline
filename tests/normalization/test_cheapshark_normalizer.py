@@ -13,7 +13,6 @@ from market_pipeline.normalization.cheapshark_normalizer import (
     CheapSharkNormalizer,
 )
 from market_pipeline.normalization.models import (
-    CheapSharkGameRequest,
     CheapSharkNormalizationSuccess,
     NormalizedCheapSharkOffer,
 )
@@ -70,22 +69,19 @@ def make_cheapshark_validation_success(
 
 
 def test_cheapshark_normalizer_normalizes_title_with_empty_offer_results() -> None:
-    request = CheapSharkGameRequest(game_id=612)
     validation = make_cheapshark_validation_success(title=" Batman ")
 
     normalizer = CheapSharkNormalizer()
 
-    result = normalizer.normalize(request, validation)
+    result = normalizer.normalize(validation)
 
     assert isinstance(result, CheapSharkNormalizationSuccess)
-    assert result.request is request
     assert result.validation is validation
     assert result.title == "Batman"
     assert result.offer_results == ()
 
 
 def test_cheapshark_normalizer_normalizes_validated_deal() -> None:
-    request = CheapSharkGameRequest(game_id=612)
     source_mapping = {
         "storeID": " 23 ",
         "price": "12.99",
@@ -97,10 +93,9 @@ def test_cheapshark_normalizer_normalizes_validated_deal() -> None:
 
     normalizer = CheapSharkNormalizer()
 
-    result = normalizer.normalize(request, validation)
+    result = normalizer.normalize(validation)
 
     assert isinstance(result, CheapSharkNormalizationSuccess)
-    assert result.request is request
     assert result.validation is validation
     assert result.title == "Batman"
     (normalized_offer,) = result.offer_results
@@ -110,7 +105,6 @@ def test_cheapshark_normalizer_normalizes_validated_deal() -> None:
 
 
 def test_cheapshark_normalizer_preserves_ordered_results_and_prior_failures() -> None:
-    request = CheapSharkGameRequest(game_id=612)
     source_mapping = {"storeID": "23", "price": "12.99"}
     validated_deal = ValidatedCheapSharkDeal.model_validate(source_mapping)
     extraction_failure = CheapSharkDealExtractionFailure(
@@ -148,10 +142,9 @@ def test_cheapshark_normalizer_preserves_ordered_results_and_prior_failures() ->
 
     normalizer = CheapSharkNormalizer()
 
-    result = normalizer.normalize(request, validation)
+    result = normalizer.normalize(validation)
 
     assert isinstance(result, CheapSharkNormalizationSuccess)
-    assert result.request is request
     assert result.validation is validation
     assert result.title == "Batman"
     preserved_extraction, normalized_offer, preserved_validation = (

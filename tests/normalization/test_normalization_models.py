@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
 from market_pipeline.acquisition.models import (
     AcquisitionMethod,
     AcquisitionSuccess,
@@ -12,7 +10,6 @@ from market_pipeline.extraction.models import (
     CheapSharkExtractionSuccess,
 )
 from market_pipeline.normalization.models import (
-    CheapSharkGameRequest,
     CheapSharkNormalizationSuccess,
     NormalizedCheapSharkGameCandidate,
     NormalizedCheapSharkGameSearch,
@@ -92,35 +89,6 @@ def make_cheapshark_validation_success(
     return CheapSharkValidationSuccess(**data)
 
 
-def test_cheapshark_game_request_preserves_integer_game_id() -> None:
-    expected_game_id = 612
-
-    result = CheapSharkGameRequest(game_id=expected_game_id)
-
-    assert result.game_id == expected_game_id
-
-
-@pytest.mark.parametrize(
-    "invalid_game_id",
-    [
-        "612",
-        True,
-        False,
-        612.50,
-        b"612",
-    ],
-)
-def test_cheapshark_game_request_rejects_non_integer_game_id(
-    invalid_game_id: object,
-) -> None:
-    with pytest.raises(
-        TypeError,
-        match="game_id must have type int",
-    ):
-        # noinspection PyTypeChecker
-        CheapSharkGameRequest(game_id=invalid_game_id)
-
-
 def test_normalized_cheapshark_offer_preserves_normalized_values() -> None:
     expected_store_id = "23"
     expected_price = Decimal("12.99")
@@ -134,27 +102,23 @@ def test_normalized_cheapshark_offer_preserves_normalized_values() -> None:
     assert result.price == expected_price
 
 
-def test_cheapshark_normalization_success_preserves_request_validation_and_normalized_data(
+def test_cheapshark_normalization_success_preserves_validation_and_normalized_data(
 ) -> None:
-    request = CheapSharkGameRequest(game_id=612)
     validation = make_cheapshark_validation_success()
     title = validation.validated_game_metadata.title
 
     result = CheapSharkNormalizationSuccess(
-        request=request,
         validation=validation,
         title=title,
         offer_results=(),
     )
 
-    assert result.request is request
     assert result.validation is validation
     assert result.title == "Batman"
     assert result.offer_results == ()
 
 
 def test_cheapshark_normalization_success_preserves_ordered_offer_results() -> None:
-    request = CheapSharkGameRequest(game_id=612)
     validation = make_cheapshark_validation_success()
     title = validation.validated_game_metadata.title
 
@@ -181,14 +145,12 @@ def test_cheapshark_normalization_success_preserves_ordered_offer_results() -> N
     )
 
     result = CheapSharkNormalizationSuccess(
-        request=request,
         validation=validation,
         title=title,
         offer_results=expected_offer_results,
     )
 
     assert isinstance(result, CheapSharkNormalizationSuccess)
-    assert result.request is request
     assert result.validation is validation
     assert result.title == "Batman"
     normalized_offer, preserved_validation, preserved_extraction = (

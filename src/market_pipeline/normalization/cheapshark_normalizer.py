@@ -4,7 +4,6 @@ from market_pipeline.extraction.models import (
     CheapSharkDealExtractionFailure,
 )
 from market_pipeline.normalization.models import (
-    CheapSharkGameRequest,
     CheapSharkNormalizedOfferResult,
     CheapSharkNormalizationSuccess,
     NormalizedCheapSharkOffer,
@@ -18,7 +17,6 @@ from market_pipeline.validation.models import (
 class CheapSharkNormalizer:
     def normalize(
         self,
-        request: CheapSharkGameRequest,
         validation: CheapSharkValidationSuccess,
     ) -> CheapSharkNormalizationSuccess:
         title = validation.validated_game_metadata.title.strip()
@@ -44,7 +42,6 @@ class CheapSharkNormalizer:
             buffer_offer_results.append(normalized_offer)
 
         return CheapSharkNormalizationSuccess(
-            request=request,
             validation=validation,
             title=title,
             offer_results=tuple(buffer_offer_results),
