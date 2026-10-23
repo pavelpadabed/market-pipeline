@@ -105,7 +105,7 @@ class UnexpectedCallNormalizer:
         raise AssertionError("normalizer must not be called")
 
 
-def test_run_pipeline_persists_successful_run() -> None:
+def test_run_pipeline_returns_true_when_observations_are_saved() -> None:
     acquisition_result = _make_acquisition_success()
     fake_acquirer = FakeAcquirer(acquisition_result)
 
@@ -122,10 +122,12 @@ def test_run_pipeline_persists_successful_run() -> None:
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+
+    assert has_saved_observations is True
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -160,11 +162,12 @@ def test_run_pipeline_persists_failed_run_on_acquisition_failure() -> None:
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
 
+    assert has_saved_observations is False
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
     assert pipeline_run.requested_external_product_id == GAME_ID
@@ -208,10 +211,11 @@ def test_run_pipeline_persists_failed_run_on_extraction_failure() -> None:
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is False
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -257,10 +261,11 @@ def test_run_pipeline_persists_failed_run_on_validation_failure() -> None:
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is False
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -302,10 +307,11 @@ def test_run_pipeline_persists_partial_failure_on_deal_extraction_failure() -> N
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is True
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -349,10 +355,11 @@ def test_run_pipeline_persists_failed_run_when_all_deals_fail_extraction() -> No
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is False
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -397,10 +404,11 @@ def test_run_pipeline_persist_partial_failure_on_deal_validation_failure() -> No
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is True
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -446,10 +454,11 @@ def test_run_pipeline_persists_success_on_empty_deals() -> None:
         fake_writer,
     )
 
-    pipeline.execute(GAME_ID)
+    has_saved_observations = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
+    assert has_saved_observations is False
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"

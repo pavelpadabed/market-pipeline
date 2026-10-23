@@ -66,7 +66,12 @@ class RunPipeline:
             failures=failures,
         )
 
-    def execute(self, game_id: int) -> None:
+    def execute(self, game_id: int) -> bool:
+        """Persist the run and return whether it contains saved observations.
+
+        False means the run was saved without observations, not that saving
+        failed. Persistence errors propagate to the caller.
+        """
         started_at = datetime.now(UTC)
         acquisition = self.acquirer.acquire(game_id)
         if isinstance(acquisition, AcquisitionFailure):
@@ -83,7 +88,7 @@ class RunPipeline:
                 ),
             )
             self.writer.persist(completed_run)
-            return
+            return False
         extraction = self.extractor.extract(acquisition)
         if isinstance(extraction, CheapSharkExtractionFailure):
             completed_run = self._build_failed_run_input(
@@ -99,7 +104,7 @@ class RunPipeline:
                 ),
             )
             self.writer.persist(completed_run)
-            return
+            return False
         validation = self.validator.validate(extraction)
         if isinstance(validation, CheapSharkValidationFailure):
             completed_run = self._build_failed_run_input(
@@ -115,7 +120,7 @@ class RunPipeline:
                 ),
             )
             self.writer.persist(completed_run)
-            return
+            return False
         normalization = self.normalizer.normalize(validation)
 
         observations: list[OfferObservationInput] = []
@@ -171,3 +176,5 @@ class RunPipeline:
         )
 
         self.writer.persist(completed_run)
+
+        return bool(completed_run.observations)
