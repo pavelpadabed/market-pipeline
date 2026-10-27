@@ -9,6 +9,12 @@ class GameSearchFailureOutcome(StrEnum):
     RATE_LIMITED = "rate_limited"
 
 
+class LatestOffersReportOutcome(StrEnum):
+    NO_CURRENT_OFFERS = "no_current_offers"
+    STORE_CATALOG_UNAVAILABLE = "store_catalog_unavailable"
+    REPORT_SAVED = "report_saved"
+
+
 @dataclass(frozen=True, slots=True)
 class GameSearchCandidate:
     game_id: int
