@@ -1,3 +1,5 @@
+import logging
+
 from market_pipeline.acquisition.cheapshark_game_search_acquirer import (
     CheapSharkGameSearchAcquirer,
 )
@@ -21,6 +23,9 @@ from market_pipeline.validation.cheapshark_game_search_validator import (
 from market_pipeline.validation.models import CheapSharkGameSearchFailure
 
 
+logger = logging.getLogger(__name__)
+
+
 class SearchGames:
     def __init__(
         self,
@@ -33,9 +38,21 @@ class SearchGames:
         self.normalizer = normalizer
 
     def search(self, query: str) -> GameSearchResult:
+        logger.info('event="game search started"')
         acquisition = self.acquirer.acquire(query)
 
         if isinstance(acquisition, AcquisitionFailure):
+            logger.error(
+                'event="game search acquisition failed" '
+                "acquisition_outcome=%s "
+                "diagnostic_message=%r "
+                "status_code=%s "
+                "retry_after_seconds=%s",
+                acquisition.outcome,
+                acquisition.diagnostic_message,
+                acquisition.status_code,
+                acquisition.retry_after_seconds,
+            )
             match acquisition.outcome:
                 case AcquisitionFailureOutcome.NETWORK_ERROR:
                     return GameSearchFailure(
@@ -70,6 +87,11 @@ class SearchGames:
         validation = self.validator.validate(acquisition)
 
         if isinstance(validation, CheapSharkGameSearchFailure):
+            logger.error(
+                'event="game search validation failed" '
+                "diagnostic_message=%r",
+                validation.diagnostic_message,
+            )
             return GameSearchFailure(
                 outcome=GameSearchFailureOutcome.INVALID_SOURCE_RESPONSE,
             )
@@ -84,5 +106,11 @@ class SearchGames:
                 title=game.title,
             )
             candidates.append(candidate)
+
+        logger.info(
+            'event="game search completed" '
+            "candidate_count=%s",
+            len(candidates),
+        )
 
         return GameSearchSuccess(candidates=tuple(candidates))
