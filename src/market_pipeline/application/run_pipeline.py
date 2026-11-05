@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 from market_pipeline.acquisition.cheapshark_acquirer import (
@@ -30,6 +31,8 @@ from market_pipeline.validation.models import (
 
 SOURCE = "cheapshark"
 CURRENCY = "USD"
+
+logger = logging.getLogger(__name__)
 
 
 class RunPipeline:
@@ -66,12 +69,63 @@ class RunPipeline:
             failures=failures,
         )
 
+    def _log_completed_run(
+        self,
+        completed_run: CompletedPipelineRunInput,
+    ) -> None:
+        log_level_by_outcome = {
+            PipelineRunOutcome.SUCCESS: logging.INFO,
+            PipelineRunOutcome.PARTIAL_FAILURE: logging.WARNING,
+            PipelineRunOutcome.FAILURE: logging.ERROR,
+        }
+        observation_count = len(completed_run.observations)
+
+        acquisition_failure_count = sum(
+            1
+            for failure in completed_run.failures
+            if failure.stage is ProcessingStage.ACQUISITION
+        )
+
+        extraction_failure_count = sum(
+            1
+            for failure in completed_run.failures
+            if failure.stage is ProcessingStage.EXTRACTION
+        )
+
+        validation_failure_count = sum(
+            1
+            for failure in completed_run.failures
+            if failure.stage is ProcessingStage.VALIDATION
+        )
+
+        logger.log(
+            log_level_by_outcome[completed_run.outcome],
+            'event="pipeline run completed" '
+            "game_id=%s "
+            "outcome=%s "
+            "observation_count=%s "
+            "acquisition_failure_count=%s "
+            "extraction_failure_count=%s "
+            "validation_failure_count=%s",
+            completed_run.requested_external_product_id,
+            completed_run.outcome,
+            observation_count,
+            acquisition_failure_count,
+            extraction_failure_count,
+            validation_failure_count,
+        )
+
     def execute(self, game_id: int) -> bool:
         """Persist the run and return whether it contains saved observations.
 
         False means the run was saved without observations, not that saving
         failed. Persistence errors propagate to the caller.
         """
+        logger.info(
+            'event="pipeline run started" '
+            "game_id=%s",
+            game_id,
+        )
         started_at = datetime.now(UTC)
         acquisition = self.acquirer.acquire(game_id)
         if isinstance(acquisition, AcquisitionFailure):
@@ -87,7 +141,24 @@ class RunPipeline:
                     ),
                 ),
             )
+            logger.error(
+                'event="pipeline acquisition failed" '
+                "game_id=%s "
+                "acquisition_outcome=%s "
+                "diagnostic_message=%r "
+                "status_code=%s "
+                "retry_after_seconds=%s",
+                game_id,
+                acquisition.outcome,
+                acquisition.diagnostic_message,
+                acquisition.status_code,
+                acquisition.retry_after_seconds,
+            )
+
             self.writer.persist(completed_run)
+
+            self._log_completed_run(completed_run)
+
             return False
         extraction = self.extractor.extract(acquisition)
         if isinstance(extraction, CheapSharkExtractionFailure):
@@ -103,7 +174,19 @@ class RunPipeline:
                     ),
                 ),
             )
+            logger.error(
+                'event="pipeline extraction failed" '
+                "game_id=%s "
+                "extraction_outcome=%s "
+                "diagnostic_message=%r",
+                game_id,
+                extraction.outcome,
+                extraction.diagnostic_message,
+            )
             self.writer.persist(completed_run)
+
+            self._log_completed_run(completed_run)
+
             return False
         validation = self.validator.validate(extraction)
         if isinstance(validation, CheapSharkValidationFailure):
@@ -119,7 +202,18 @@ class RunPipeline:
                     ),
                 ),
             )
+            logger.error(
+                'event="pipeline validation failed" '
+                "game_id=%s "
+                "diagnostic_message=%r",
+                game_id,
+                validation.diagnostic_message,
+            )
+
             self.writer.persist(completed_run)
+
+            self._log_completed_run(completed_run)
+
             return False
         normalization = self.normalizer.normalize(validation)
 
@@ -176,5 +270,7 @@ class RunPipeline:
         )
 
         self.writer.persist(completed_run)
+
+        self._log_completed_run(completed_run)
 
         return bool(completed_run.observations)
