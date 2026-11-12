@@ -10,6 +10,7 @@ from market_pipeline.acquisition.models import (
     AcquisitionResult,
     AcquisitionSuccess,
 )
+from market_pipeline.application.models import RunPipelineOutcome
 from market_pipeline.application.run_pipeline import RunPipeline
 from market_pipeline.extraction.cheapshark_extractor import CheapSharkExtractor
 from market_pipeline.extraction.models import CheapSharkExtractionSuccess
@@ -52,7 +53,7 @@ def _make_acquisition_success(**overrides: object) -> AcquisitionSuccess:
     return AcquisitionSuccess(**data)
 
 
-def _make_acquisition_failure() -> AcquisitionFailure:
+def _make_acquisition_failure(**overrides: object) -> AcquisitionFailure:
     data = {
         "requested_url": "https://www.cheapshark.com/api/1.0/games?id=612",
         "method": AcquisitionMethod.HTTP,
@@ -66,6 +67,7 @@ def _make_acquisition_failure() -> AcquisitionFailure:
         "retry_after_seconds": None,
     }
 
+    data.update(overrides)
     return AcquisitionFailure(**data)
 
 
@@ -105,7 +107,7 @@ class UnexpectedCallNormalizer:
         raise AssertionError("normalizer must not be called")
 
 
-def test_run_pipeline_returns_true_when_observations_are_saved() -> None:
+def test_run_pipeline_returns_offers_saved_result_when_observations_are_saved() -> None:
     acquisition_result = _make_acquisition_success()
     fake_acquirer = FakeAcquirer(acquisition_result)
 
@@ -122,12 +124,16 @@ def test_run_pipeline_returns_true_when_observations_are_saved() -> None:
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
 
-    assert has_saved_observations is True
+    assert result.outcome is RunPipelineOutcome.OFFERS_SAVED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count == 1
+    assert result.saved_observation_count == 1
+    assert result.rejected_record_count == 0
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -162,12 +168,17 @@ def test_run_pipeline_persists_failed_run_on_acquisition_failure() -> None:
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
 
-    assert has_saved_observations is False
+    assert result.outcome is RunPipelineOutcome.CONNECTION_ERROR
+    assert result.retry_after_seconds is None
+    assert result.source_record_count is None
+    assert result.saved_observation_count is None
+    assert result.rejected_record_count is None
+
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
     assert pipeline_run.requested_external_product_id == GAME_ID
@@ -180,6 +191,54 @@ def test_run_pipeline_persists_failed_run_on_acquisition_failure() -> None:
     assert failure.stage is ProcessingStage.ACQUISITION
     assert failure.source_index is None
     assert failure.diagnostic_message == acquisition_result.diagnostic_message
+
+
+def test_run_pipeline_returns_rate_limited_result_on_http_429() -> None:
+    acquisition_result = _make_acquisition_failure(
+        outcome=AcquisitionFailureOutcome.HTTP_ERROR,
+        status_code=429,
+        diagnostic_message="HTTP request returned status 429",
+        retry_after_seconds=60,
+    )
+    pipeline = RunPipeline(
+        FakeAcquirer(acquisition_result),
+        UnexpectedCallExtractor(),
+        CheapSharkValidator(),
+        CheapSharkNormalizer(),
+        FakeWriter(),
+    )
+
+    result = pipeline.execute(GAME_ID)
+
+    assert result.outcome is RunPipelineOutcome.RATE_LIMITED
+    assert result.retry_after_seconds == 60
+    assert result.source_record_count is None
+    assert result.saved_observation_count is None
+    assert result.rejected_record_count is None
+
+
+def test_run_pipeline_returns_processing_failed_for_other_acquisition_failures() -> None:
+    acquisition_result = _make_acquisition_failure(
+        outcome=AcquisitionFailureOutcome.UNEXPECTED_CONTENT,
+        status_code=200,
+        content_type="text/html",
+        diagnostic_message="Unsupported Content-Type: text/html",
+    )
+    pipeline = RunPipeline(
+        FakeAcquirer(acquisition_result),
+        UnexpectedCallExtractor(),
+        CheapSharkValidator(),
+        CheapSharkNormalizer(),
+        FakeWriter(),
+    )
+
+    result = pipeline.execute(GAME_ID)
+
+    assert result.outcome is RunPipelineOutcome.PROCESSING_FAILED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count is None
+    assert result.saved_observation_count is None
+    assert result.rejected_record_count is None
 
 
 def test_run_pipeline_persists_failed_run_on_extraction_failure() -> None:
@@ -211,11 +270,15 @@ def test_run_pipeline_persists_failed_run_on_extraction_failure() -> None:
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is False
+    assert result.outcome is RunPipelineOutcome.PROCESSING_FAILED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count is None
+    assert result.saved_observation_count is None
+    assert result.rejected_record_count is None
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -261,11 +324,15 @@ def test_run_pipeline_persists_failed_run_on_validation_failure() -> None:
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is False
+    assert result.outcome is RunPipelineOutcome.PROCESSING_FAILED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count is None
+    assert result.saved_observation_count is None
+    assert result.rejected_record_count is None
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -307,11 +374,15 @@ def test_run_pipeline_persists_partial_failure_on_deal_extraction_failure() -> N
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is True
+    assert result.outcome is RunPipelineOutcome.OFFERS_PARTIALLY_SAVED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count == 2
+    assert result.saved_observation_count == 1
+    assert result.rejected_record_count == 1
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -355,11 +426,15 @@ def test_run_pipeline_persists_failed_run_when_all_deals_fail_extraction() -> No
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is False
+    assert result.outcome is RunPipelineOutcome.ALL_OFFERS_REJECTED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count == 1
+    assert result.saved_observation_count == 0
+    assert result.rejected_record_count == 1
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -404,11 +479,15 @@ def test_run_pipeline_persist_partial_failure_on_deal_validation_failure() -> No
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is True
+    assert result.outcome is RunPipelineOutcome.OFFERS_PARTIALLY_SAVED
+    assert result.retry_after_seconds is None
+    assert result.source_record_count == 2
+    assert result.saved_observation_count == 1
+    assert result.rejected_record_count == 1
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"
@@ -454,11 +533,15 @@ def test_run_pipeline_persists_success_on_empty_deals() -> None:
         fake_writer,
     )
 
-    has_saved_observations = pipeline.execute(GAME_ID)
+    result = pipeline.execute(GAME_ID)
 
     assert fake_acquirer.called_game_id == GAME_ID
     assert len(fake_writer.pipeline_runs) == 1
-    assert has_saved_observations is False
+    assert result.outcome is RunPipelineOutcome.NO_OFFERS
+    assert result.retry_after_seconds is None
+    assert result.source_record_count == 0
+    assert result.saved_observation_count == 0
+    assert result.rejected_record_count == 0
 
     pipeline_run = fake_writer.pipeline_runs[0]
     assert pipeline_run.requested_source == "cheapshark"

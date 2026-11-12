@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 from market_pipeline.acquisition.cheapshark_acquirer import (
     CheapSharkApiAcquirer,
 )
-from market_pipeline.acquisition.models import AcquisitionFailure
+from market_pipeline.acquisition.models import AcquisitionFailure, AcquisitionFailureOutcome
+from market_pipeline.application.models import RunPipelineOutcome, RunPipelineResult
 from market_pipeline.extraction.cheapshark_extractor import CheapSharkExtractor
 from market_pipeline.extraction.models import (
     CheapSharkDealExtractionFailure,
@@ -115,11 +116,25 @@ class RunPipeline:
             validation_failure_count,
         )
 
-    def execute(self, game_id: int) -> bool:
-        """Persist the run and return whether it contains saved observations.
+    def _build_early_failure_result(
+        self,
+        *,
+        outcome: RunPipelineOutcome,
+        retry_after_seconds: int | None,
+    ) -> RunPipelineResult:
+        return RunPipelineResult(
+            outcome=outcome,
+            retry_after_seconds=retry_after_seconds,
+            source_record_count=None,
+            saved_observation_count=None,
+            rejected_record_count=None,
+        )
 
-        False means the run was saved without observations, not that saving
-        failed. Persistence errors propagate to the caller.
+    def execute(self, game_id: int) -> RunPipelineResult:
+        """Persist the run and return its semantic outcome and available counts.
+
+        Counts are absent when per-record processing did not complete.
+        Persistence errors propagate to the caller.
         """
         logger.info(
             'event="pipeline run started" '
@@ -159,7 +174,28 @@ class RunPipeline:
 
             self._log_completed_run(completed_run)
 
-            return False
+            match acquisition.outcome:
+                case AcquisitionFailureOutcome.NETWORK_ERROR:
+                    return self._build_early_failure_result(
+                        outcome=RunPipelineOutcome.CONNECTION_ERROR,
+                        retry_after_seconds=None,
+                    )
+                case AcquisitionFailureOutcome.HTTP_ERROR if acquisition.status_code == 429:
+                    return self._build_early_failure_result(
+                        outcome=RunPipelineOutcome.RATE_LIMITED,
+                        retry_after_seconds=acquisition.retry_after_seconds,
+                    )
+                case (
+                    AcquisitionFailureOutcome.TIMEOUT
+                    | AcquisitionFailureOutcome.REQUEST_ERROR
+                    | AcquisitionFailureOutcome.UNEXPECTED_CONTENT
+                    | AcquisitionFailureOutcome.HTTP_ERROR
+                ):
+                    return self._build_early_failure_result(
+                        outcome=RunPipelineOutcome.PROCESSING_FAILED,
+                        retry_after_seconds=None,
+                    )
+
         extraction = self.extractor.extract(acquisition)
         if isinstance(extraction, CheapSharkExtractionFailure):
             completed_run = self._build_failed_run_input(
@@ -187,7 +223,10 @@ class RunPipeline:
 
             self._log_completed_run(completed_run)
 
-            return False
+            return self._build_early_failure_result(
+                outcome=RunPipelineOutcome.PROCESSING_FAILED,
+                retry_after_seconds=None,
+            )
         validation = self.validator.validate(extraction)
         if isinstance(validation, CheapSharkValidationFailure):
             completed_run = self._build_failed_run_input(
@@ -214,7 +253,10 @@ class RunPipeline:
 
             self._log_completed_run(completed_run)
 
-            return False
+            return self._build_early_failure_result(
+                outcome=RunPipelineOutcome.PROCESSING_FAILED,
+                retry_after_seconds=None,
+            )
         normalization = self.normalizer.normalize(validation)
 
         observations: list[OfferObservationInput] = []
@@ -247,19 +289,25 @@ class RunPipeline:
 
         finished_at = datetime.now(UTC)
 
-        if not failures:
-            outcome = PipelineRunOutcome.SUCCESS
-        elif observations:
-            outcome = PipelineRunOutcome.PARTIAL_FAILURE
+        if not failures and not observations:
+            persistence_outcome = PipelineRunOutcome.SUCCESS
+            result_outcome = RunPipelineOutcome.NO_OFFERS
+        elif observations and not failures:
+            persistence_outcome = PipelineRunOutcome.SUCCESS
+            result_outcome = RunPipelineOutcome.OFFERS_SAVED
+        elif observations and failures:
+            persistence_outcome = PipelineRunOutcome.PARTIAL_FAILURE
+            result_outcome = RunPipelineOutcome.OFFERS_PARTIALLY_SAVED
         else:
-            outcome = PipelineRunOutcome.FAILURE
+            persistence_outcome = PipelineRunOutcome.FAILURE
+            result_outcome = RunPipelineOutcome.ALL_OFFERS_REJECTED
 
         completed_run = CompletedPipelineRunInput(
             requested_source=SOURCE,
             requested_external_product_id=game_id,
             started_at=started_at,
             finished_at=finished_at,
-            outcome=outcome,
+            outcome=persistence_outcome,
             product=ProductInput(
                 source=SOURCE,
                 external_product_id=game_id,
@@ -272,5 +320,13 @@ class RunPipeline:
         self.writer.persist(completed_run)
 
         self._log_completed_run(completed_run)
+        observation_count = len(completed_run.observations)
+        rejected_count = len(completed_run.failures)
 
-        return bool(completed_run.observations)
+        return RunPipelineResult(
+            outcome=result_outcome,
+            retry_after_seconds=None,
+            source_record_count=observation_count + rejected_count,
+            saved_observation_count=observation_count,
+            rejected_record_count=rejected_count,
+        )
