@@ -5,7 +5,7 @@ from market_pipeline.application.models import (
     GameSearchFailure,
     GameSearchFailureOutcome,
 )
-from market_pipeline.cli.presenter import (
+from market_pipeline.cli.game_search_presenter import (
     format_game_search_failure,
     format_game_selection,
     format_invalid_game_selection,
