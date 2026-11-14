@@ -3,6 +3,8 @@ import pytest
 from market_pipeline.application.models import (
     GameSearchFailure,
     GameSearchFailureOutcome,
+    LatestOffersReportOutcome,
+    LatestOffersReportResult,
     RunPipelineOutcome,
     RunPipelineResult,
 )
@@ -452,3 +454,123 @@ def test_run_pipeline_result_rejects_retry_delay_when_not_rate_limited() -> None
         match="retry_after_seconds must be None unless outcome is rate_limited",
     ):
         _make_run_pipeline_result(retry_after_seconds=30)
+
+
+def test_latest_offers_report_result_preserves_outcome_and_exported_offer_count() -> None:
+    expected_result = {
+        "outcome": LatestOffersReportOutcome.REPORT_SAVED,
+        "exported_offer_count": 1,
+    }
+
+    actual_result = LatestOffersReportResult(**expected_result)
+
+    assert actual_result.outcome is LatestOffersReportOutcome.REPORT_SAVED
+    assert actual_result.exported_offer_count == 1
+
+
+@pytest.mark.parametrize(
+    "invalid_outcome",
+    [
+        "report_saved",
+        None,
+        13,
+        1.5,
+        True,
+        RunPipelineOutcome.OFFERS_SAVED,
+    ],
+)
+def test_latest_offers_report_result_rejects_invalid_outcome_type(
+    invalid_outcome: object,
+) -> None:
+    with pytest.raises(
+        TypeError,
+        match="outcome must be an instance of LatestOffersReportOutcome",
+    ):
+        LatestOffersReportResult(
+            outcome=invalid_outcome,
+            exported_offer_count=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_exported_offer_count",
+    [True, False, 1.5, "1", RunPipelineOutcome.OFFERS_SAVED],
+)
+def test_latest_offers_report_result_rejects_invalid_exported_offer_count_type(
+    invalid_exported_offer_count: object,
+) -> None:
+    with pytest.raises(
+        TypeError,
+        match="exported_offer_count must have type int or be None",
+    ):
+        LatestOffersReportResult(
+            outcome=LatestOffersReportOutcome.REPORT_SAVED,
+            exported_offer_count=invalid_exported_offer_count,
+        )
+
+
+@pytest.mark.parametrize("non_positive_count", [0, -5])
+def test_latest_offers_report_result_rejects_non_positive_exported_offer_count(
+    non_positive_count: int,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="exported_offer_count must be positive when provided",
+    ):
+        LatestOffersReportResult(
+            outcome=LatestOffersReportOutcome.REPORT_SAVED,
+            exported_offer_count=non_positive_count,
+        )
+
+
+def test_latest_offers_report_result_requires_exported_offer_count_for_report_saved(
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="exported_offer_count is required when outcome is report_saved",
+    ):
+        LatestOffersReportResult(
+            outcome=LatestOffersReportOutcome.REPORT_SAVED,
+            exported_offer_count=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome_without_report",
+    [
+        LatestOffersReportOutcome.NO_CURRENT_OFFERS,
+        LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE,
+    ],
+)
+def test_latest_offers_report_result_rejects_exported_offer_count_when_report_is_not_saved(
+    outcome_without_report: LatestOffersReportOutcome,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="exported_offer_count must be None when report is not saved",
+    ):
+        LatestOffersReportResult(
+            outcome=outcome_without_report,
+            exported_offer_count=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome_without_report",
+    [
+        LatestOffersReportOutcome.NO_CURRENT_OFFERS,
+        LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE,
+    ],
+)
+def test_latest_offers_report_result_preserves_none_count_when_report_is_not_saved(
+    outcome_without_report: LatestOffersReportOutcome,
+) -> None:
+    expected_result = {
+        "outcome": outcome_without_report,
+        "exported_offer_count": None,
+    }
+
+    actual_result = LatestOffersReportResult(**expected_result)
+
+    assert actual_result.outcome is outcome_without_report
+    assert actual_result.exported_offer_count is None

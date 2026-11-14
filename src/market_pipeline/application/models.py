@@ -186,3 +186,39 @@ class RunPipelineResult:
             raise ValueError(
                 "retry_after_seconds must be None unless outcome is rate_limited"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class LatestOffersReportResult:
+    outcome: LatestOffersReportOutcome
+    exported_offer_count: int | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.outcome, LatestOffersReportOutcome):
+            raise TypeError(
+                "outcome must be an instance of LatestOffersReportOutcome"
+            )
+        if (
+            self.exported_offer_count is not None
+            and type(self.exported_offer_count) is not int
+        ):
+            raise TypeError("exported_offer_count must have type int or be None")
+        if (
+            self.exported_offer_count is not None
+            and self.exported_offer_count <= 0
+        ):
+            raise ValueError("exported_offer_count must be positive when provided")
+        if (
+            self.outcome is LatestOffersReportOutcome.REPORT_SAVED
+            and self.exported_offer_count is None
+        ):
+            raise ValueError(
+                "exported_offer_count is required when outcome is report_saved"
+            )
+        if (
+            self.outcome is not LatestOffersReportOutcome.REPORT_SAVED
+            and self.exported_offer_count is not None
+        ):
+            raise ValueError(
+                "exported_offer_count must be None when report is not saved"
+            )
