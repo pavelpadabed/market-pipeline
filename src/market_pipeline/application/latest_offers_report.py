@@ -5,7 +5,10 @@ from market_pipeline.acquisition.cheapshark_stores_acquirer import (
     CheapSharkStoresAcquirer,
 )
 from market_pipeline.acquisition.models import AcquisitionFailure
-from market_pipeline.application.models import LatestOffersReportOutcome
+from market_pipeline.application.models import (
+    LatestOffersReportOutcome,
+    LatestOffersReportResult,
+)
 from market_pipeline.export.excel_latest_offers_exporter import (
     ExcelLatestOffersExporter,
 )
@@ -47,7 +50,7 @@ class GenerateCheapSharkLatestOffersReport:
         self,
         external_product_id: int,
         path: Path,
-    ) -> LatestOffersReportOutcome:
+    ) -> LatestOffersReportResult:
         logger.info(
             'event="latest offers report generation started" '
             "external_product_id=%s",
@@ -67,7 +70,10 @@ class GenerateCheapSharkLatestOffersReport:
                 external_product_id,
                 outcome,
             )
-            return outcome
+            return LatestOffersReportResult(
+                outcome=outcome,
+                exported_offer_count=None,
+            )
 
         acquisition = self.acquirer.acquire()
         if isinstance(acquisition, AcquisitionFailure):
@@ -84,7 +90,10 @@ class GenerateCheapSharkLatestOffersReport:
                 acquisition.status_code,
                 acquisition.retry_after_seconds,
             )
-            return LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+            return LatestOffersReportResult(
+                outcome=LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE,
+                exported_offer_count=None,
+            )
 
         validation = self.validator.validate(acquisition)
         if isinstance(validation, CheapSharkStoreCatalogFailure):
@@ -95,7 +104,10 @@ class GenerateCheapSharkLatestOffersReport:
                 external_product_id,
                 validation.diagnostic_message,
             )
-            return LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+            return LatestOffersReportResult(
+                outcome=LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE,
+                exported_offer_count=None,
+            )
 
         normalization = self.normalizer.normalize(validation)
 
@@ -105,14 +117,17 @@ class GenerateCheapSharkLatestOffersReport:
                 "external_product_id=%s",
                 external_product_id,
             )
-            return LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+            return LatestOffersReportResult(
+                outcome=LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE,
+                exported_offer_count=None,
+            )
 
-        latest_offers = self.presenter.present(
+        report_rows = self.presenter.present(
             current_offers,
             normalization,
         )
 
-        self.exporter.export(latest_offers, path)
+        self.exporter.export(report_rows, path)
 
         logger.info(
             'event="latest offers report saved" '
@@ -122,4 +137,7 @@ class GenerateCheapSharkLatestOffersReport:
             path.name,
         )
 
-        return LatestOffersReportOutcome.REPORT_SAVED
+        return LatestOffersReportResult(
+            outcome=LatestOffersReportOutcome.REPORT_SAVED,
+            exported_offer_count=len(report_rows),
+        )

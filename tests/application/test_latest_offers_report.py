@@ -176,7 +176,7 @@ def test_generate_latest_offers_report_returns_report_saved() -> None:
         fake_exporter,
     )
 
-    outcome = report_generator.execute(
+    result = report_generator.execute(
         EXTERNAL_PRODUCT_ID,
         report_path,
     )
@@ -199,7 +199,8 @@ def test_generate_latest_offers_report_returns_report_saved() -> None:
     assert fake_exporter.called_report_rows == expected_rows
     assert fake_exporter.called_path == report_path
 
-    assert outcome is LatestOffersReportOutcome.REPORT_SAVED
+    assert result.outcome is LatestOffersReportOutcome.REPORT_SAVED
+    assert result.exported_offer_count == len(expected_rows)
 
 
 def test_generate_latest_offers_report_returns_no_current_offers() -> None:
@@ -227,7 +228,7 @@ def test_generate_latest_offers_report_returns_no_current_offers() -> None:
         fake_exporter,
     )
 
-    outcome = report_generator.execute(
+    result = report_generator.execute(
         EXTERNAL_PRODUCT_ID,
         report_path,
     )
@@ -240,7 +241,8 @@ def test_generate_latest_offers_report_returns_no_current_offers() -> None:
     assert fake_exporter.called_report_rows is None
     assert fake_exporter.called_path is None
 
-    assert outcome is LatestOffersReportOutcome.NO_CURRENT_OFFERS
+    assert result.outcome is LatestOffersReportOutcome.NO_CURRENT_OFFERS
+    assert result.exported_offer_count is None
 
 
 def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_acquisition_failure(
@@ -268,7 +270,7 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_acqu
         fake_exporter,
     )
 
-    outcome = report_generator.execute(
+    result = report_generator.execute(
         EXTERNAL_PRODUCT_ID,
         report_path,
     )
@@ -281,7 +283,9 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_acqu
     assert fake_exporter.called_report_rows is None
     assert fake_exporter.called_path is None
 
-    assert outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.exported_offer_count is None
+
 
 def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_validation_failure(
 ) -> None:
@@ -309,7 +313,7 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_vali
         fake_exporter,
     )
 
-    outcome = report_generator.execute(
+    result = report_generator.execute(
         EXTERNAL_PRODUCT_ID,
         report_path,
     )
@@ -322,7 +326,8 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_vali
     assert fake_exporter.called_report_rows is None
     assert fake_exporter.called_path is None
 
-    assert outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.exported_offer_count is None
 
 
 def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_empty_catalog(
@@ -350,7 +355,7 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_empt
         fake_exporter,
     )
 
-    outcome = report_generator.execute(
+    result = report_generator.execute(
         EXTERNAL_PRODUCT_ID,
         report_path,
     )
@@ -363,4 +368,5 @@ def test_generate_latest_offers_report_returns_store_catalog_unavailable_on_empt
     assert fake_exporter.called_report_rows is None
     assert fake_exporter.called_path is None
 
-    assert outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.outcome is LatestOffersReportOutcome.STORE_CATALOG_UNAVAILABLE
+    assert result.exported_offer_count is None
