@@ -1,4 +1,5 @@
 from market_pipeline.application.models import GameSearchFailure
+from market_pipeline.application.run_pipeline import RunPipeline
 from market_pipeline.application.search_games import SearchGames
 from market_pipeline.cli.argument_parser import parse_query
 from market_pipeline.cli.console import (
@@ -11,11 +12,25 @@ from market_pipeline.cli.game_search_presenter import (
     format_invalid_game_selection,
     format_no_games_found,
 )
+from market_pipeline.cli.run_pipeline_presenter import format_run_pipeline_result
 
 
 class CliCoordinator:
-    def __init__(self, searcher: SearchGames) -> None:
+    def __init__(
+        self,
+        searcher: SearchGames,
+        run_pipeline: RunPipeline,
+    ) -> None:
         self.searcher = searcher
+        self.run_pipeline = run_pipeline
+
+    def run(self, args: list[str]) -> None:
+        game_id = self.select_game(args)
+        if game_id is None:
+            return
+        result = self.run_pipeline.execute(game_id)
+        message = format_run_pipeline_result(result)
+        display_message(message)
 
     def select_game(self, args: list[str]) -> int | None:
         query = parse_query(args)

@@ -1,3 +1,5 @@
+from typing import Never
+
 import pytest
 
 from market_pipeline.application.models import (
@@ -6,6 +8,8 @@ from market_pipeline.application.models import (
     GameSearchFailureOutcome,
     GameSearchResult,
     GameSearchSuccess,
+    RunPipelineOutcome,
+    RunPipelineResult,
 )
 from market_pipeline.cli.coordinator import CliCoordinator
 
@@ -20,6 +24,21 @@ class FakeSearchGames:
     def search(self, query: str) -> GameSearchResult:
         self.called_query = query
         return self.result
+
+
+class FakeRunPipeline:
+    def __init__(self, result: RunPipelineResult) -> None:
+        self.result = result
+        self.called_game_id: int | None = None
+
+    def execute(self, game_id: int) -> RunPipelineResult:
+        self.called_game_id = game_id
+        return self.result
+
+
+class UnexpectedCallRunPipeline:
+    def execute(self, game_id: int) -> Never:
+        raise AssertionError("run pipeline must not be called")
 
 
 def _make_game_search_success(
@@ -54,7 +73,10 @@ def test_select_game_returns_selected_game_id(
 
     monkeypatch.setattr("builtins.input", fake_selection_input)
 
-    coordinator = CliCoordinator(fake_search)
+    coordinator = CliCoordinator(
+        fake_search,
+        UnexpectedCallRunPipeline(),
+    )
 
     result = coordinator.select_game(VALID_ARGS)
 
@@ -62,7 +84,7 @@ def test_select_game_returns_selected_game_id(
     assert fake_search.called_query == "The Witcher 3"
 
 
-def test_select_game_displays_failure_message_and_returns_none(
+def test_run_displays_search_failure_message_without_executing_pipeline(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     game_search_failure = GameSearchFailure(
@@ -71,9 +93,14 @@ def test_select_game_displays_failure_message_and_returns_none(
 
     fake_search = FakeSearchGames(game_search_failure)
 
-    coordinator = CliCoordinator(fake_search)
+    run_pipeline = UnexpectedCallRunPipeline()
 
-    result = coordinator.select_game(VALID_ARGS)
+    coordinator = CliCoordinator(
+        fake_search,
+        run_pipeline,
+    )
+
+    coordinator.run(VALID_ARGS)
 
     expected_message = (
         "Could not connect to the game search service. "
@@ -83,11 +110,8 @@ def test_select_game_displays_failure_message_and_returns_none(
 
     captured = capsys.readouterr()
 
-    assert result is None
     assert captured.out == expected_output
-
-
-def test_select_game_displays_no_games_message_and_returns_none(
+def test_run_displays_no_games_message_without_executing_pipeline(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     search_result = _make_game_search_success(
@@ -96,9 +120,14 @@ def test_select_game_displays_no_games_message_and_returns_none(
 
     fake_search = FakeSearchGames(search_result)
 
-    coordinator = CliCoordinator(fake_search)
+    run_pipeline = UnexpectedCallRunPipeline()
 
-    result = coordinator.select_game(VALID_ARGS)
+    coordinator = CliCoordinator(
+        fake_search,
+        run_pipeline,
+    )
+
+    coordinator.run(VALID_ARGS)
 
     expected_message = "No games found for your query."
 
@@ -106,7 +135,6 @@ def test_select_game_displays_no_games_message_and_returns_none(
 
     captured = capsys.readouterr()
 
-    assert result is None
     assert captured.out == expected_output
 
 
@@ -114,7 +142,7 @@ def test_select_game_displays_no_games_message_and_returns_none(
     "raw_input",
     ["q", " Q "],
 )
-def test_select_game_returns_none_when_user_quits(
+def test_run_does_not_execute_pipeline_when_user_quits(
     monkeypatch: pytest.MonkeyPatch,
     raw_input: str,
 ) -> None:
@@ -127,11 +155,12 @@ def test_select_game_returns_none_when_user_quits(
 
     monkeypatch.setattr("builtins.input", fake_quit_input)
 
-    coordinator = CliCoordinator(fake_search)
+    coordinator = CliCoordinator(
+        fake_search,
+        UnexpectedCallRunPipeline(),
+    )
 
-    result = coordinator.select_game(VALID_ARGS)
-
-    assert result is None
+    coordinator.run(VALID_ARGS)
 
 
 @pytest.mark.parametrize(
@@ -155,7 +184,10 @@ def test_select_game_retries_after_non_integer_input(
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    coordinator = CliCoordinator(fake_search)
+    coordinator = CliCoordinator(
+        fake_search,
+        UnexpectedCallRunPipeline(),
+    )
 
     result = coordinator.select_game(VALID_ARGS)
 
@@ -188,7 +220,10 @@ def test_select_game_retries_after_out_of_range_selection(
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    coordinator = CliCoordinator(fake_search)
+    coordinator = CliCoordinator(
+        fake_search,
+        UnexpectedCallRunPipeline(),
+    )
 
     result = coordinator.select_game(VALID_ARGS)
 
@@ -198,3 +233,64 @@ def test_select_game_retries_after_out_of_range_selection(
 
     assert result == 42
     assert received_prompts[1] == expected_retry_prompt
+
+
+def test_run_executes_pipeline_for_selected_game(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    search_result = _make_game_search_success()
+    fake_search = FakeSearchGames(search_result)
+    monkeypatch.setattr("builtins.input", fake_selection_input)
+
+    run_pipeline_result = RunPipelineResult(
+        outcome=RunPipelineOutcome.OFFERS_SAVED,
+        retry_after_seconds=None,
+        source_record_count=1,
+        saved_observation_count=1,
+        rejected_record_count=0,
+    )
+    fake_run_pipeline = FakeRunPipeline(run_pipeline_result)
+
+    coordinator = CliCoordinator(
+        fake_search,
+        fake_run_pipeline,
+    )
+    coordinator.run(VALID_ARGS)
+
+    assert fake_run_pipeline.called_game_id == 42
+
+
+def test_run_displays_pipeline_result_message(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    search_result = _make_game_search_success()
+    fake_search = FakeSearchGames(search_result)
+    monkeypatch.setattr("builtins.input", fake_selection_input)
+
+    run_pipeline_result = RunPipelineResult(
+        outcome=RunPipelineOutcome.OFFERS_SAVED,
+        retry_after_seconds=None,
+        source_record_count=1,
+        saved_observation_count=1,
+        rejected_record_count=0,
+    )
+    fake_run_pipeline = FakeRunPipeline(run_pipeline_result)
+
+    coordinator = CliCoordinator(
+        fake_search,
+        fake_run_pipeline,
+    )
+    coordinator.run(VALID_ARGS)
+
+    expected_message = (
+        "Pipeline completed successfully:\n"
+        "\n"
+        "Offers found: 1\n"
+        "Offers saved: 1"
+    )
+    expected_output = f"{expected_message}\n"
+
+    captured = capsys.readouterr()
+
+    assert captured.out == expected_output
