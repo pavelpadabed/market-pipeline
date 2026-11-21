@@ -101,4 +101,5 @@ class ExcelLatestOffersExporter:
 
         worksheet.auto_filter.ref = f"A1:E{1 + len(report_rows)}"
 
+        path.parent.mkdir(parents=True, exist_ok=True)
         workbook.save(path)

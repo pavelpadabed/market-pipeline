@@ -251,3 +251,13 @@ def test_exporter_centers_headers_and_selected_report_values(tmp_path: Path) -> 
         value == "center"
         for value in actual_report_alignments
     )
+
+
+def test_export_creates_missing_parent_directories(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "reports/custom/latest_offers_13.xlsx"
+
+    exporter = ExcelLatestOffersExporter()
+
+    exporter.export((_make_report_row(),), workbook_path)
+
+    assert workbook_path.parent.is_dir()
