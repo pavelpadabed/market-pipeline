@@ -1,7 +1,10 @@
-from market_pipeline.application.models import GameSearchFailure
+from market_pipeline.application.latest_offers_report import (
+    GenerateCheapSharkLatestOffersReport,
+)
+from market_pipeline.application.models import GameSearchFailure, RunPipelineOutcome
 from market_pipeline.application.run_pipeline import RunPipeline
 from market_pipeline.application.search_games import SearchGames
-from market_pipeline.cli.argument_parser import parse_query
+from market_pipeline.cli.argument_parser import parse_cli_arguments
 from market_pipeline.cli.console import (
     display_message,
     prompt_user,
@@ -12,6 +15,9 @@ from market_pipeline.cli.game_search_presenter import (
     format_invalid_game_selection,
     format_no_games_found,
 )
+from market_pipeline.cli.latest_offers_report_presenter import (
+    format_latest_offers_report,
+)
 from market_pipeline.cli.run_pipeline_presenter import format_run_pipeline_result
 
 
@@ -20,21 +26,46 @@ class CliCoordinator:
         self,
         searcher: SearchGames,
         run_pipeline: RunPipeline,
+        report_generator: GenerateCheapSharkLatestOffersReport,
     ) -> None:
         self.searcher = searcher
         self.run_pipeline = run_pipeline
+        self.report_generator = report_generator
 
     def run(self, args: list[str]) -> None:
-        game_id = self.select_game(args)
+        cli_arguments = parse_cli_arguments(args)
+        query = cli_arguments.query
+        game_id = self.select_game(query)
         if game_id is None:
             return
-        result = self.run_pipeline.execute(game_id)
-        message = format_run_pipeline_result(result)
-        display_message(message)
+        pipeline_result = self.run_pipeline.execute(game_id)
+        pipeline_message = format_run_pipeline_result(pipeline_result)
+        display_message(pipeline_message)
+        match pipeline_result.outcome:
+            case (
+                RunPipelineOutcome.OFFERS_SAVED
+                | RunPipelineOutcome.OFFERS_PARTIALLY_SAVED
+            ):
+                report_filename = f"latest_offers_{game_id}.xlsx"
+                report_path = cli_arguments.output_dir / report_filename
+                report_result = self.report_generator.execute(game_id, report_path)
+                report_message = format_latest_offers_report(report_result)
+                display_message("")
+                display_message(report_message)
+            case (
+                RunPipelineOutcome.NO_OFFERS
+                | RunPipelineOutcome.ALL_OFFERS_REJECTED
+                | RunPipelineOutcome.PROCESSING_FAILED
+                | RunPipelineOutcome.CONNECTION_ERROR
+                | RunPipelineOutcome.RATE_LIMITED
+            ):
+                return
+            case _:
+                raise ValueError(
+                    f"unsupported run pipeline outcome: {pipeline_result.outcome}"
+                )
 
-    def select_game(self, args: list[str]) -> int | None:
-        query = parse_query(args)
-
+    def select_game(self, query: str) -> int | None:
         search_result = self.searcher.search(query)
 
         if isinstance(search_result, GameSearchFailure):
